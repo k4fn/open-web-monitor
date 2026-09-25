@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="ja">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="style.css"><title>Open Web Monitor</title></head>
+<body class="popup">
+  <header class="popup-head"><span class="mark">◉</span><div><strong>Open Web Monitor</strong><small>ページの変更をローカルで監視</small></div></header>
+  <div id="current" class="current">現在のページを確認中…</div>
+  <button id="whole" class="primary wide">ページ全体を監視</button>
+  <button id="pick" class="secondary wide">ページ内の部分を選択</button>
+  <section id="existing" class="existing" hidden><h2>このページの監視 <span id="existing-count"></span></h2><div id="existing-list"></div></section>
+  <button id="dashboard" class="text-button wide">監視一覧を開く ↗</button>
+  <p id="message" class="message" role="status"></p>
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

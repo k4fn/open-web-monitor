@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "Open Web Monitor",
+  "version": "0.9.0",
+  "description": "Monitor page or element changes locally, with no fixed site count limit.",
+  "minimum_chrome_version": "120",
+  "permissions": ["alarms", "notifications", "scripting", "tabs", "storage", "unlimitedStorage", "activeTab"],
+  "host_permissions": ["http://*/*", "https://*/*"],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "action": { "default_title": "Open Web Monitor", "default_popup": "popup.html" },
+  "options_page": "dashboard.html",
+  "icons": { "16": "icons/icon16.png", "48": "icons/icon48.png", "128": "icons/icon128.png" }
+}

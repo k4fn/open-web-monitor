@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="ja">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="style.css"><title>監視一覧 · Open Web Monitor</title></head>
+<body class="dashboard">
+  <div class="shell">
+    <header class="topbar"><div class="brand"><span class="mark">◉</span><div><strong>Open Web Monitor</strong><small>変更を見逃さない、自分だけの監視一覧</small></div></div><div class="top-actions"><button id="export" class="secondary">エクスポート</button><label class="secondary file-label">インポート<input id="import" type="file" accept="application/json,.json" hidden></label></div></header>
+    <main>
+      <section class="hero"><div><p class="eyebrow">LOCAL PAGE MONITORING</p><h1>監視一覧</h1></div><div class="stats"><div><b id="total">0</b><span>登録済み</span></div><div><b id="unread">0</b><span>未読の変更</span></div></div></section>
+      <section class="check-mode-bar" aria-label="監視時の開き方"><div><strong>監視時の開き方</strong><span>確認後、自動で閉じます</span></div><select id="check-mode" aria-label="監視時の開き方"><option value="pinned-tab">非アクティブなピン留めタブ</option><option value="window">新しい非アクティブウィンドウ</option></select></section>
+      <details class="add-card" id="add-panel"><summary>＋ URL から監視を追加 <span>開いているページの部分選択は拡張アイコンから</span></summary><form id="add-form"><div class="form-grid"><label>URL<input name="url" type="url" placeholder="https://example.com/page" required></label><label>名前<input name="title" placeholder="任意"></label><label>監視する CSS セレクター<input name="selector" placeholder="例: #price（空欄ならページ全体）"></label><label>確認間隔<select name="intervalMinutes"><option value="5">5 分</option><option value="15" selected>15 分</option><option value="30">30 分</option><option value="60">1 時間</option><option value="360">6 時間</option><option value="1440">1 日</option></select></label></div><label class="ignore-field">無視する CSS セレクター（1 行に 1 つ）<textarea name="ignoreSelectors" rows="2" placeholder="例: .advertisement&#10;article header"></textarea></label><div class="form-footer"><span id="form-message" role="status"></span><button class="primary" type="submit">監視に追加</button></div></form></details>
+      <section class="list-section"><div class="list-toolbar"><h2>Watchlist <span id="visible-count"></span></h2><div class="filters"><input id="search" type="search" placeholder="名前・URL・内容を検索" aria-label="監視を検索"><select id="filter" aria-label="状態で絞り込み"><option value="all">すべて</option><option value="unread">未読あり</option><option value="error">エラー</option><option value="paused">一時停止</option></select><select id="sort" aria-label="並び順"><option value="activity">更新順</option><option value="checked">確認順</option><option value="name">名前順</option></select></div></div><div class="list-header" aria-hidden="true"><span>監視先</span><span>取得した内容</span><span>変更</span><span>最終確認</span><span>間隔</span><span>状態・操作</span></div><div id="list" class="list"></div></section>
+    </main>
+    <footer>データはこのブラウザー内に保存されます。監視は Chrome が起動している間に動作します。</footer>
+  </div>
+  <dialog id="edit-dialog" class="edit-dialog" aria-label="監視を編集"></dialog>
+  <dialog id="bulk-dialog" class="bulk-dialog" aria-labelledby="bulk-title"><form id="bulk-form"><div class="bulk-head"><div><p class="eyebrow">WATCHLIST</p><h2 id="bulk-title">複数URLに複製</h2><p id="bulk-source"></p></div><button id="bulk-close" type="button" class="small-button" aria-label="閉じる">✕</button></div><label for="bulk-urls">複製先のURL（1行に1件）</label><textarea id="bulk-urls" rows="9" placeholder="https://example.com/page-1&#10;https://example.com/page-2" spellcheck="false"></textarea><p class="bulk-hint">監視要素、除外要素、確認間隔、停止状態を引き継ぎます。登録済みのURLはスキップします。</p><div id="bulk-preview" class="bulk-preview" role="status" aria-live="polite">URLを入力してください</div><div class="bulk-actions"><button id="bulk-cancel" type="button" class="secondary">キャンセル</button><button id="bulk-submit" type="submit" class="primary" disabled>複製を作成</button></div></form></dialog>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  <script type="module" src="dashboard.js"></script>
+</body>
+</html>
