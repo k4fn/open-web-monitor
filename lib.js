@@ -15,6 +15,26 @@ export function cleanInterval(value) {
   return minutes;
 }
 
+export function cleanConcurrency(value) {
+  const count = Number(value);
+  if (!Number.isSafeInteger(count) || count < 1) throw new Error("同時確認数は 1 以上の整数で指定してください");
+  return count;
+}
+
+export async function runWithConcurrency(items, limit, task) {
+  let next = 0;
+  const errors = [];
+  const worker = async () => {
+    while (next < items.length) {
+      const item = items[next++];
+      try { await task(item); }
+      catch (error) { errors.push(error); }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(cleanConcurrency(limit), items.length) }, worker));
+  return errors;
+}
+
 export function intervalParts(minutes) {
   if (minutes % 1440 === 0) return { value: minutes / 1440, unit: "day" };
   if (minutes % 60 === 0) return { value: minutes / 60, unit: "hour" };

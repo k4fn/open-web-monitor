@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Open Web Monitor",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "description": "Monitor page or element changes locally, with no fixed site count limit.",
   "minimum_chrome_version": "120",
   "permissions": ["alarms", "notifications", "scripting", "tabs", "storage", "unlimitedStorage", "activeTab"],

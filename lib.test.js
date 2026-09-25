@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { cleanUrl, cleanInterval, intervalParts, intervalFromParts, intervalLabel, cleanIgnoreSelectors, normalizeText, difference } from "./lib.js";
+import { cleanUrl, cleanInterval, cleanConcurrency, runWithConcurrency, intervalParts, intervalFromParts, intervalLabel, cleanIgnoreSelectors, normalizeText, difference } from "./lib.js";
 
 test("web URL only, without fragment", () => {
   assert.equal(cleanUrl("https://example.com/page#part"), "https://example.com/page");
@@ -38,4 +38,25 @@ test("ignored selectors accept multiple lines and reject oversized rules", () =>
 test("difference isolates changed middle content", () => {
   assert.deepEqual(difference("Price 100 yen", "Price 120 yen"), { before: "0", after: "2" });
   assert.deepEqual(difference("abc", "abc"), { before: "", after: "" });
+});
+
+test("all due monitors run within the selected concurrency, including beyond 24", async () => {
+  const items = Array.from({ length: 31 }, (_, index) => index);
+  const processed = [];
+  let active = 0;
+  let peak = 0;
+  const errors = await runWithConcurrency(items, 3, async item => {
+    active++;
+    peak = Math.max(peak, active);
+    await new Promise(resolve => setTimeout(resolve, 1));
+    processed.push(item);
+    active--;
+    if (item === 10) throw new Error("one check failed");
+  });
+  assert.equal(processed.length, 31);
+  assert.equal(peak, 3);
+  assert.equal(errors.length, 1);
+  assert.equal(cleanConcurrency("4"), 4);
+  assert.throws(() => cleanConcurrency(0));
+  assert.throws(() => cleanConcurrency(1.5));
 });

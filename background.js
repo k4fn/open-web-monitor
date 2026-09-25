@@ -1,7 +1,8 @@
-import { cleanUrl, cleanInterval, cleanIgnoreSelectors, normalizeText, difference, monitorKey, isMonitorKey, MAX_HISTORY } from "./lib.js";
+import { cleanUrl, cleanInterval, cleanConcurrency, runWithConcurrency, cleanIgnoreSelectors, normalizeText, difference, monitorKey, isMonitorKey, MAX_HISTORY } from "./lib.js";
 
 const ALARM = "scan-due-monitors";
 const CHECK_MODE_KEY = "checkMode";
+const SCAN_CONCURRENCY_KEY = "scanConcurrency";
 const CHECK_MODES = new Set(["pinned-tab", "window"]);
 const running = new Set();
 let scanInProgress = false;
@@ -27,6 +28,12 @@ async function saveMonitor(monitor) {
 async function getCheckMode() {
   const value = (await chrome.storage.local.get(CHECK_MODE_KEY))[CHECK_MODE_KEY];
   return CHECK_MODES.has(value) ? value : "pinned-tab";
+}
+
+async function getScanConcurrency() {
+  const value = (await chrome.storage.local.get(SCAN_CONCURRENCY_KEY))[SCAN_CONCURRENCY_KEY];
+  if (value === undefined) return 4;
+  try { return cleanConcurrency(value); } catch { return 4; }
 }
 
 async function createMonitor(input) {
@@ -205,10 +212,9 @@ async function scanDue() {
   scanInProgress = true;
   try {
     const due = (await allMonitors()).filter(m => m.enabled && m.nextCheckAt <= Date.now()).sort((a, b) => a.nextCheckAt - b.nextCheckAt);
-    // Bound each alarm run; remaining monitors stay due for the next minute.
-    for (let i = 0; i < Math.min(due.length, 24); i += 4) {
-      await Promise.allSettled(due.slice(i, i + 4).map(m => checkMonitor(m.id)));
-    }
+    const concurrency = await getScanConcurrency();
+    const errors = await runWithConcurrency(due, concurrency, monitor => checkMonitor(monitor.id));
+    for (const error of errors) console.error("監視の確認に失敗しました", error);
   } finally { scanInProgress = false; }
 }
 
@@ -225,6 +231,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     switch (message.type) {
       case "list": return await allMonitors();
       case "getCheckMode": return await getCheckMode();
+      case "getScanConcurrency": return await getScanConcurrency();
+      case "setScanConcurrency": {
+        const count = cleanConcurrency(message.count);
+        await chrome.storage.local.set({ [SCAN_CONCURRENCY_KEY]: count });
+        return count;
+      }
       case "setCheckMode": {
         if (!CHECK_MODES.has(message.mode)) throw new Error("監視時の開き方が無効です");
         await chrome.storage.local.set({ [CHECK_MODE_KEY]: message.mode });

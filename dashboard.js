@@ -5,6 +5,7 @@ const search = document.querySelector("#search");
 const filter = document.querySelector("#filter");
 const sort = document.querySelector("#sort");
 const checkMode = document.querySelector("#check-mode");
+const scanConcurrency = document.querySelector("#scan-concurrency");
 const editDialog = document.querySelector("#edit-dialog");
 const bulkDialog = document.querySelector("#bulk-dialog");
 const bulkUrls = document.querySelector("#bulk-urls");
@@ -355,6 +356,15 @@ checkMode.addEventListener("change", async () => {
   try { await send("setCheckMode", { mode: checkMode.value }); showToast("監視時の開き方を保存しました"); }
   catch (error) { showToast(error.message, true); checkMode.value = await send("getCheckMode"); }
 });
+scanConcurrency.addEventListener("change", async () => {
+  try {
+    scanConcurrency.value = await send("setScanConcurrency", { count: scanConcurrency.value });
+    showToast("同時確認数を保存しました");
+  } catch (error) {
+    showToast(error.message, true);
+    scanConcurrency.value = await send("getScanConcurrency");
+  }
+});
 
 document.querySelector("#export").addEventListener("click", () => {
   const items = monitors.map(({ url, title, selector, ignoreSelectors, intervalMinutes, enabled }) => ({ url, title, selector, ignoreSelectors, intervalMinutes, enabled }));
@@ -395,3 +405,4 @@ refresh().then(() => {
   if (location.hash.length > 1) openEditor(decodeURIComponent(location.hash.slice(1))).catch(error => showToast(error.message, true));
 }).catch(error => { list.textContent = error.message; });
 send("getCheckMode").then(mode => { checkMode.value = mode; }).catch(error => showToast(error.message, true));
+send("getScanConcurrency").then(count => { scanConcurrency.value = count; }).catch(error => showToast(error.message, true));
