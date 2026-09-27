@@ -9,12 +9,14 @@ test("more than 25 monitors can be created and listed", async () => {
     runtime: { onInstalled: event(), onStartup: event(), onMessage: { addListener(fn) { handler = fn; } } },
     alarms: { onAlarm: event(), async get() { return {}; } },
     notifications: { onClicked: event() },
+    action: { async setBadgeText() {}, async setBadgeBackgroundColor() {} },
     storage: { local: {
       async get(key) {
         if (key === null) return Object.fromEntries(values);
         return { [key]: values.get(key) };
       },
-      async set(entries) { for (const [key, value] of Object.entries(entries)) values.set(key, value); }
+      async set(entries) { for (const [key, value] of Object.entries(entries)) values.set(key, value); },
+      async remove(key) { values.delete(key); }
     } }
   };
   await import("./background.js");
@@ -71,4 +73,54 @@ test("more than 25 monitors can be created and listed", async () => {
   const again = await request("bulkDuplicate", { id: first.id, urls });
   assert.deepEqual(again.value, { created: 0, skipped: 4 });
   assert.equal((await request("list")).value.length, 33);
+  const tagA = (await request("createTag", { name: "Forum" })).value;
+  const tagB = (await request("createTag", { name: "Priority" })).value;
+  const tagged = await request("update", { id: first.id, patch: { tagIds: [tagA.id, tagB.id] } });
+  assert.deepEqual(tagged.value.tagIds, [tagA.id, tagB.id]);
+  const taggedCopy = await request("duplicate", { id: first.id });
+  assert.deepEqual(taggedCopy.value.tagIds, [tagA.id, tagB.id]);
+  await request("renameTag", { id: tagA.id, name: "Community" });
+  assert.equal((await request("listTags")).value.find(tag => tag.id === tagA.id).name, "Community");
+  await request("deleteTag", { id: tagA.id });
+  assert.deepEqual((await request("list")).value.find(item => item.id === first.id).tagIds, [tagB.id]);
+
+  const beforeTrash = (await request("list")).value.find(item => item.id === first.id);
+  await request("delete", { id: first.id });
+  const trashed = (await request("list")).value.find(item => item.id === first.id);
+  assert.ok(trashed.trashedAt);
+  assert.equal(trashed.enabled, beforeTrash.enabled);
+  assert.deepEqual(trashed.tagIds, beforeTrash.tagIds);
+  await request("restore", { id: first.id });
+  const restored = (await request("list")).value.find(item => item.id === first.id);
+  assert.equal(restored.trashedAt, null);
+  assert.equal(restored.enabled, false);
+  const doomed = (await request("create", { monitor: { url: "https://example.net/doomed" } })).value;
+  await request("delete", { id: doomed.id });
+  await request("deletePermanently", { id: doomed.id });
+  assert.equal((await request("list")).value.some(item => item.id === doomed.id), false);
+
+  const legacy = await request("import", { items: [{ url: "https://legacy.example/a", selector: ".body" }] });
+  assert.equal(legacy.value, 1);
+  const modern = await request("import", { items: {
+    version: 2, tags: [{ id: "old-id", name: "Imported" }],
+    monitors: [{ url: "https://modern.example/b", tagIds: ["old-id"], trashedAt: 1, enabled: false }]
+  } });
+  assert.equal(modern.value, 1);
+  const imported = (await request("list")).value.find(item => item.url === "https://modern.example/b");
+  assert.ok(imported.trashedAt);
+  assert.equal(imported.enabled, false);
+  assert.equal((await request("listTags")).value.find(tag => tag.id === imported.tagIds[0]).name, "Imported");
+  const invalidImport = await request("import", { items: { version: 2, tags: [], monitors: [{ url: "https://valid.example" }, { url: "file:///bad" }] } });
+  assert.equal(invalidImport.ok, false);
+  assert.equal((await request("list")).value.some(item => item.url === "https://valid.example/"), false);
+  for (let i = 0; i < 24; i++) {
+    values.set("monitor:legacy-"+i, {
+      id: "legacy-"+i, url: "https://old.example/"+i, title: "Existing "+i,
+      enabled: true, status: "ok", history: [], nextCheckAt: Date.now()+3600000,
+      intervalMinutes: 60, selector: "", ignoreSelectors: [], text: "saved"
+    });
+  }
+  const existing = (await request("list")).value.filter(item => item.id.startsWith("legacy-"));
+  assert.equal(existing.length, 24);
+  assert.ok(existing.every(item => !item.trashedAt && !item.tagIds?.length && item.text === "saved"));
 });

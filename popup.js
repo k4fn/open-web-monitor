@@ -11,7 +11,7 @@ async function showExisting() {
   const response = await chrome.runtime.sendMessage({ type: "list" });
   if (!response?.ok) return;
   const currentUrl = new URL(tab.url); currentUrl.hash = "";
-  const matches = response.value.filter(monitor => monitor.url === currentUrl.href);
+  const matches = response.value.filter(monitor => !monitor.trashedAt && monitor.url === currentUrl.href);
   const section = document.querySelector("#existing");
   section.hidden = !matches.length;
   document.querySelector("#existing-count").textContent = `${matches.length} 件`;
@@ -49,4 +49,4 @@ document.querySelector("#pick").addEventListener("click", async () => {
   } catch (error) { message.textContent = error.message; }
 });
 
-document.querySelector("#dashboard").addEventListener("click", () => chrome.runtime.openOptionsPage());
+document.querySelector("#dashboard").addEventListener("click", () => chrome.tabs.create({ url: chrome.runtime.getURL("dashboard.html") }));

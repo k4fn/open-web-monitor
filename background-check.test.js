@@ -12,14 +12,16 @@ test("empty content is a change and notification failures do not mark checks as 
   let removedWindow;
   let removedTab;
   let pickerConfig;
+  let alarmHandler;
+  let tabCreateCount = 0;
   const emptyEvent = () => ({ addListener() {}, removeListener() {} });
   globalThis.chrome = {
     runtime: { onInstalled: emptyEvent(), onStartup: emptyEvent(), onMessage: { addListener(fn) { handler = fn; } } },
-    alarms: { onAlarm: emptyEvent(), async get() { return {}; } },
+    alarms: { onAlarm: { addListener(fn) { alarmHandler = fn; } }, async get() { return {}; } },
     notifications: { onClicked: emptyEvent(), async create() { throw new Error("notifications disabled"); } },
     action: { async setBadgeText() {}, async setBadgeBackgroundColor() {} },
     tabs: {
-      onUpdated: emptyEvent(), onRemoved: emptyEvent(), async create(options) { openedTab = options; return { id: 1 }; },
+      onUpdated: emptyEvent(), onRemoved: emptyEvent(), async create(options) { openedTab = options; tabCreateCount++; return { id: 1 }; },
       async get() { return { id: 1, status: "complete" }; },
       async query() { return [{ id: 2 }]; }, async remove(id) { removedTab = id; }
     },
@@ -99,4 +101,38 @@ test("empty content is a change and notification failures do not mark checks as 
   pageTitle = "Would overwrite";
   await request("check", { id: secondCopy.id });
   assert.equal((await request("list")).value.find(item => item.id === secondCopy.id).title, "Manual title");
+  const firstKey = `monitor:${firstCopy.id}`;
+  const secondKey = `monitor:${secondCopy.id}`;
+  values.set(firstKey, { ...values.get(firstKey), status: "error", error: "old failure" });
+  await request("update", { id: secondCopy.id, patch: { enabled: false } });
+  await request("delete", { id });
+  const started = await request("startBatch", { scope: "error" });
+  assert.equal(started.value.ids.length, 1);
+  assert.deepEqual(started.value.ids, [firstCopy.id]);
+  for (let i = 0; i < 30; i++) {
+    if ((await request("getBatchJob")).value.status === "done") break;
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  const finished = (await request("getBatchJob")).value;
+  assert.equal(finished.done, 1);
+  assert.equal(finished.failed, 0);
+
+  // A persisted partial job is resumed by the alarm without reopening completed monitors.
+  await request("update", { id: secondCopy.id, patch: { enabled: true } });
+  const resumed = {
+    id: "resume-job", scope: "all", ids: [firstCopy.id, secondCopy.id],
+    completed: { [firstCopy.id]: { failed: false, at: Date.now() } },
+    done: 1, failed: 0, status: "running", startedAt: Date.now()
+  };
+  values.set("batchCheckJob", resumed);
+  const beforeResume = tabCreateCount;
+  alarmHandler({ name: "scan-due-monitors" });
+  for (let i = 0; i < 30; i++) {
+    if ((await request("getBatchJob")).value.status === "done") break;
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  const afterResume = (await request("getBatchJob")).value;
+  assert.equal(afterResume.done, 2);
+  assert.equal(afterResume.status, "done");
+  assert.equal(tabCreateCount - beforeResume, 1);
 });

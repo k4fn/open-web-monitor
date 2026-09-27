@@ -4,8 +4,28 @@ const ALARM = "scan-due-monitors";
 const CHECK_MODE_KEY = "checkMode";
 const SCAN_CONCURRENCY_KEY = "scanConcurrency";
 const CHECK_MODES = new Set(["pinned-tab", "window"]);
-const running = new Set();
+const running = new Map();
+const TAGS_KEY = "tags";
+const BATCH_KEY = "batchCheckJob";
+const PROTOCOL_VERSION = 2;
 let scanInProgress = false;
+let batchInProgress = false;
+let activeChecks = 0;
+const checkWaiters = [];
+let batchProgressWrite = Promise.resolve();
+
+async function withCheckSlot(task) {
+  const limit = await getScanConcurrency();
+  if (activeChecks >= limit) await new Promise(resolve => checkWaiters.push(resolve));
+  else activeChecks++;
+  try { return await task(); }
+  finally {
+    const next = checkWaiters.shift();
+    if (next) next();
+    else activeChecks--;
+  }
+}
+
 
 async function ensureAlarm() {
   if (!await chrome.alarms.get(ALARM)) await chrome.alarms.create(ALARM, { periodInMinutes: 1 });
@@ -36,7 +56,26 @@ async function getScanConcurrency() {
   try { return cleanConcurrency(value); } catch { return 4; }
 }
 
+function cleanTagIds(value) {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) throw new Error("タグの形式が無効です");
+  return [...new Set(value.map(String))];
+}
+
+async function getTags() {
+  const value = (await chrome.storage.local.get(TAGS_KEY))[TAGS_KEY];
+  return Array.isArray(value) ? value : [];
+}
+
+async function validTagIds(ids) {
+  const clean = cleanTagIds(ids);
+  const known = new Set((await getTags()).map(tag => tag.id));
+  if (clean.some(id => !known.has(id))) throw new Error("存在しないタグがあります");
+  return clean;
+}
+
 async function createMonitor(input) {
+  const tagIds = await validTagIds(input.tagIds);
   const url = cleanUrl(input.url);
   const selector = String(input.selector || "").trim();
   if (selector.length > 500) throw new Error("CSS セレクターが長すぎます");
@@ -45,7 +84,7 @@ async function createMonitor(input) {
     id: crypto.randomUUID(), url, title: String(input.title || new URL(url).hostname).trim().slice(0, 120), autoTitle: Boolean(input.autoTitle),
     selector, ignoreSelectors, intervalMinutes: cleanInterval(input.intervalMinutes ?? 15), enabled: input.enabled === undefined ? true : Boolean(input.enabled),
     createdAt: Date.now(), nextCheckAt: Date.now(), lastCheckAt: null,
-    status: "new", error: null, text: null, history: []
+    status: "new", error: null, text: null, history: [], tagIds, trashedAt: null
   };
   await saveMonitor(monitor);
   await ensureAlarm();
@@ -150,24 +189,22 @@ function readableUrl(url) {
 }
 
 async function updateBadge() {
-  const count = (await allMonitors()).reduce((sum, item) => sum + (item.history || []).filter(entry => !entry.read).length, 0);
+  const count = (await allMonitors()).filter(item => !item.trashedAt).reduce((sum, item) => sum + (item.history || []).filter(entry => !entry.read).length, 0);
   await chrome.action.setBadgeText({ text: count ? (count > 99 ? "99+" : String(count)) : "" });
   await chrome.action.setBadgeBackgroundColor({ color: "#dc554c" });
 }
 
 async function checkMonitor(id) {
-  if (running.has(id)) return;
-  running.add(id);
-  try {
+  if (running.has(id)) return running.get(id);
+  const promise = withCheckSlot(async () => {
     const monitor = await getMonitor(id);
-    if (!monitor) return;
+    if (!monitor || !monitor.enabled || monitor.trashedAt) return monitor;
     const checkedAt = Date.now();
     try {
       const page = await loadInTab(monitor.url, monitor.selector, monitor.ignoreSelectors);
       const text = normalizeText(page.text);
       const latest = await getMonitor(id);
-      if (!latest) return;
-      if (!sameSelection(monitor, latest)) return;
+      if (!latest || latest.trashedAt || !sameSelection(monitor, latest)) return latest;
       let notificationMessage = null;
       if (latest.text !== null && latest.text !== text) {
         const delta = difference(latest.text, text);
@@ -191,12 +228,11 @@ async function checkMonitor(id) {
             type: "basic", iconUrl: "icons/icon128.png", title: `${latest.title} に変更があります`,
             message: notificationMessage
           });
-        } catch { /* The change remains in history even if system notifications are unavailable. */ }
+        } catch { /* history remains available */ }
       }
     } catch (error) {
       const latest = await getMonitor(id);
-      if (!latest) return;
-      if (!sameSelection(monitor, latest)) return;
+      if (!latest || latest.trashedAt || !sameSelection(monitor, latest)) return latest;
       latest.status = "error";
       latest.error = error?.message || String(error);
       latest.lastCheckAt = checkedAt;
@@ -204,23 +240,119 @@ async function checkMonitor(id) {
       await saveMonitor(latest);
     }
     await updateBadge();
-  } finally { running.delete(id); }
+    return await getMonitor(id);
+  });
+  running.set(id, promise);
+  try { return await promise; } finally { running.delete(id); }
 }
 
 async function scanDue() {
   if (scanInProgress) return;
   scanInProgress = true;
   try {
-    const due = (await allMonitors()).filter(m => m.enabled && m.nextCheckAt <= Date.now()).sort((a, b) => a.nextCheckAt - b.nextCheckAt);
-    const concurrency = await getScanConcurrency();
-    const errors = await runWithConcurrency(due, concurrency, monitor => checkMonitor(monitor.id));
+    const due = (await allMonitors()).filter(m => m.enabled && !m.trashedAt && m.nextCheckAt <= Date.now()).sort((a, b) => a.nextCheckAt - b.nextCheckAt);
+    const errors = await runWithConcurrency(due, await getScanConcurrency(), monitor => checkMonitor(monitor.id));
     for (const error of errors) console.error("監視の確認に失敗しました", error);
   } finally { scanInProgress = false; }
 }
 
-chrome.runtime.onInstalled.addListener(() => { ensureAlarm(); updateBadge(); });
-chrome.runtime.onStartup.addListener(() => { ensureAlarm(); updateBadge(); });
-chrome.alarms.onAlarm.addListener(alarm => { if (alarm.name === ALARM) scanDue(); });
+async function getBatchJob() {
+  return (await chrome.storage.local.get(BATCH_KEY))[BATCH_KEY] || null;
+}
+
+async function resumeBatch() {
+  if (batchInProgress) return;
+  batchInProgress = true;
+  try {
+    let job = await getBatchJob();
+    if (!job || job.status !== "running") return;
+    const pending = job.ids.filter(id => !job.completed[id]);
+    await runWithConcurrency(pending, await getScanConcurrency(), async id => {
+      const item = await getMonitor(id);
+      let failed = false;
+      if (item?.enabled && !item.trashedAt) {
+        try { failed = (await checkMonitor(id))?.status === "error"; }
+        catch { failed = true; }
+      }
+      batchProgressWrite = batchProgressWrite.catch(() => {}).then(async () => {
+        const latest = await getBatchJob();
+        if (!latest || latest.id !== job.id || latest.completed[id]) return;
+        latest.completed[id] = { failed, at: Date.now() };
+        latest.done = Object.keys(latest.completed).length;
+        latest.failed = Object.values(latest.completed).filter(value => value.failed).length;
+        if (latest.done >= latest.ids.length) latest.status = "done";
+        await chrome.storage.local.set({ [BATCH_KEY]: latest });
+      });
+      await batchProgressWrite;
+    });
+  } finally { batchInProgress = false; }
+}
+
+async function startBatch(scope) {
+  if (!["all", "error"].includes(scope)) throw new Error("一括確認の対象が無効です");
+  const current = await getBatchJob();
+  if (current?.status === "running") return current;
+  const items = (await allMonitors()).filter(item => item.enabled && !item.trashedAt && (scope === "all" || item.status === "error"));
+  const job = { id: crypto.randomUUID(), scope, ids: items.map(item => item.id), completed: {}, done: 0, failed: 0, status: items.length ? "running" : "done", startedAt: Date.now() };
+  await chrome.storage.local.set({ [BATCH_KEY]: job });
+  if (items.length) resumeBatch().catch(error => console.error("一括確認に失敗しました", error));
+  return job;
+}
+
+async function saveTags(tags) {
+  await chrome.storage.local.set({ [TAGS_KEY]: tags });
+  return tags;
+}
+
+async function importData(payload) {
+  const legacy = Array.isArray(payload);
+  const items = legacy ? payload : payload?.monitors;
+  const incomingTags = legacy ? [] : payload?.tags;
+  if (!Array.isArray(items) || !Array.isArray(incomingTags)) throw new Error("インポート形式が無効です");
+  for (const item of items) {
+    cleanUrl(item.url); cleanInterval(item.intervalMinutes ?? 15);
+    if (String(item.selector || "").length > 500) throw new Error("CSS セレクターが長すぎます");
+    cleanIgnoreSelectors(item.ignoreSelectors);
+    cleanTagIds(item.tagIds);
+  }
+  const names = new Set();
+  for (const tag of incomingTags) {
+    const name = String(tag.name || "").trim();
+    if (!name || names.has(name.toLowerCase())) throw new Error("タグ名が無効か重複しています");
+    names.add(name.toLowerCase());
+  }
+  const tags = await getTags();
+  const tagMap = new Map();
+  for (const tag of incomingTags) {
+    let existing = tags.find(item => item.name.toLowerCase() === String(tag.name).trim().toLowerCase());
+    if (!existing) { existing = { id: crypto.randomUUID(), name: String(tag.name).trim() }; tags.push(existing); }
+    tagMap.set(String(tag.id), existing.id);
+  }
+  for (const item of items) {
+    if ((item.tagIds || []).some(id => !tagMap.has(String(id)))) throw new Error("監視に存在しないタグが含まれています");
+  }
+  const entries = { [TAGS_KEY]: tags };
+  for (const item of items) {
+    const url = cleanUrl(item.url);
+    const monitor = {
+      id: crypto.randomUUID(), url, title: String(item.title || new URL(url).hostname).trim().slice(0, 120),
+      autoTitle: Boolean(item.autoTitle), selector: String(item.selector || "").trim(),
+      ignoreSelectors: cleanIgnoreSelectors(item.ignoreSelectors), intervalMinutes: cleanInterval(item.intervalMinutes ?? 15),
+      enabled: item.enabled === undefined ? true : Boolean(item.enabled), createdAt: Date.now(), nextCheckAt: Date.now(),
+      lastCheckAt: null, status: "new", error: null, text: null, history: [],
+      tagIds: (item.tagIds || []).map(id => tagMap.get(String(id))), trashedAt: item.trashedAt ? Date.now() : null
+    };
+    entries[monitorKey(monitor.id)] = monitor;
+  }
+  await chrome.storage.local.set(entries);
+  await ensureAlarm();
+  await updateBadge();
+  return items.length;
+}
+
+chrome.runtime.onInstalled.addListener(() => { ensureAlarm(); updateBadge(); resumeBatch(); });
+chrome.runtime.onStartup.addListener(() => { ensureAlarm(); updateBadge(); resumeBatch(); });
+chrome.alarms.onAlarm.addListener(alarm => { if (alarm.name === ALARM) { scanDue(); resumeBatch(); } });
 chrome.notifications.onClicked.addListener(id => {
   const monitorId = id.split(":")[1];
   chrome.tabs.create({ url: chrome.runtime.getURL(`dashboard.html#${monitorId}`) });
@@ -230,6 +362,40 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   (async () => {
     switch (message.type) {
       case "list": return await allMonitors();
+      case "getCapabilities": return { protocol: PROTOCOL_VERSION };
+      case "listTags": return await getTags();
+      case "getBatchJob": return await getBatchJob();
+      case "startBatch": return await startBatch(message.scope);
+      case "createTag": {
+        const name = String(message.name || "").trim().slice(0, 80);
+        if (!name) throw new Error("タグ名を入力してください");
+        const tags = await getTags();
+        if (tags.some(tag => tag.name.toLowerCase() === name.toLowerCase())) throw new Error("同じ名前のタグがあります");
+        const tag = { id: crypto.randomUUID(), name };
+        await saveTags([...tags, tag]);
+        return tag;
+      }
+      case "renameTag": {
+        const name = String(message.name || "").trim().slice(0, 80);
+        if (!name) throw new Error("タグ名を入力してください");
+        const tags = await getTags();
+        const tag = tags.find(item => item.id === message.id);
+        if (!tag) throw new Error("タグが見つかりません");
+        if (tags.some(item => item.id !== tag.id && item.name.toLowerCase() === name.toLowerCase())) throw new Error("同じ名前のタグがあります");
+        tag.name = name; await saveTags(tags); return tag;
+      }
+      case "deleteTag": {
+        const tags = await getTags();
+        if (!tags.some(item => item.id === message.id)) throw new Error("タグが見つかりません");
+        const entries = { [TAGS_KEY]: tags.filter(item => item.id !== message.id) };
+        for (const monitor of await allMonitors()) {
+          if (monitor.tagIds?.includes(message.id)) {
+            monitor.tagIds = monitor.tagIds.filter(id => id !== message.id);
+            entries[monitorKey(monitor.id)] = monitor;
+          }
+        }
+        await chrome.storage.local.set(entries); return true;
+      }
       case "getCheckMode": return await getCheckMode();
       case "getScanConcurrency": return await getScanConcurrency();
       case "setScanConcurrency": {
@@ -252,7 +418,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           selector: original.selector,
           ignoreSelectors: original.ignoreSelectors || [],
           intervalMinutes: original.intervalMinutes,
-          enabled: original.enabled
+          enabled: original.enabled,
+          tagIds: original.tagIds || []
         });
         return copy;
       }
@@ -270,7 +437,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
             selector: source.selector, ignoreSelectors: [...(source.ignoreSelectors || [])],
             intervalMinutes: source.intervalMinutes, enabled: source.enabled,
             createdAt: Date.now(), nextCheckAt: Date.now(), lastCheckAt: null,
-            status: "new", error: null, text: null, history: []
+            status: "new", error: null, text: null, history: [], tagIds: [...(source.tagIds || [])], trashedAt: null
           };
           entries[monitorKey(monitor.id)] = monitor;
         }
@@ -288,7 +455,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           ignoreSelectors: cleanIgnoreSelectors(draft.ignoreSelectors)
         });
       }
-      case "check": await checkMonitor(message.id); return await getMonitor(message.id);
+      case "check": return await checkMonitor(message.id);
       case "update": {
         const monitor = await getMonitor(message.id);
         if (!monitor) throw new Error("監視が見つかりません");
@@ -312,6 +479,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         if (patch.ignoreSelectors !== undefined) monitor.ignoreSelectors = cleanIgnoreSelectors(patch.ignoreSelectors);
         if (patch.intervalMinutes !== undefined) monitor.intervalMinutes = cleanInterval(patch.intervalMinutes);
         if (patch.enabled !== undefined) monitor.enabled = Boolean(patch.enabled);
+        if (patch.tagIds !== undefined) monitor.tagIds = await validTagIds(patch.tagIds);
         const selectionChanged = monitor.url !== oldUrl || monitor.selector !== oldSelector || JSON.stringify(monitor.ignoreSelectors || []) !== oldIgnore;
         if (selectionChanged) {
           monitor.text = null; monitor.status = "new";
@@ -319,26 +487,28 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         if (selectionChanged || monitor.intervalMinutes !== oldInterval || (!wasEnabled && monitor.enabled)) monitor.nextCheckAt = Date.now();
         return await saveMonitor(monitor);
       }
-      case "delete": await chrome.storage.local.remove(monitorKey(message.id)); await updateBadge(); return true;
+      case "delete": {
+        const monitor = await getMonitor(message.id);
+        if (!monitor) return false;
+        monitor.trashedAt = Date.now(); await saveMonitor(monitor); await updateBadge(); return true;
+      }
+      case "restore": {
+        const monitor = await getMonitor(message.id);
+        if (!monitor) return false;
+        monitor.trashedAt = null;
+        if (monitor.enabled) monitor.nextCheckAt = Date.now();
+        await saveMonitor(monitor); await updateBadge(); return true;
+      }
+      case "deletePermanently": {
+        await chrome.storage.local.remove(monitorKey(message.id)); await updateBadge(); return true;
+      }
       case "markRead": {
         const monitor = await getMonitor(message.id);
         if (!monitor) return false;
         monitor.history = monitor.history.map(entry => ({ ...entry, read: true }));
         await saveMonitor(monitor); await updateBadge(); return true;
       }
-      case "import": {
-        if (!Array.isArray(message.items)) throw new Error("JSON 配列が必要です");
-        // Validate the whole file before writing any monitor.
-        for (const item of message.items) {
-          cleanUrl(item.url);
-          cleanInterval(item.intervalMinutes ?? 15);
-          if (String(item.selector || "").length > 500) throw new Error("CSS セレクターが長すぎます");
-          cleanIgnoreSelectors(item.ignoreSelectors);
-        }
-        let count = 0;
-        for (const item of message.items) { await createMonitor(item); count++; }
-        return count;
-      }
+      case "import": return await importData(message.items);
       default: throw new Error("不明な操作です");
     }
   })().then(value => sendResponse({ ok: true, value })).catch(error => sendResponse({ ok: false, error: error?.message || String(error) }));

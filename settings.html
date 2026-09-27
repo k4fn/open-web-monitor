@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="ja">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="style.css"><title>設定 · Open Web Monitor</title></head>
+<body class="settings-page">
+  <main class="settings-wrap">
+    <header class="settings-header"><div><a href="dashboard.html">← 監視一覧</a><h1>設定</h1><p>監視の実行方法とデータを管理します。</p></div></header>
+    <div id="reload-banner" class="reload-banner" hidden><strong>拡張機能の再読み込みが必要です</strong><p>設定画面とバックグラウンド処理の版が異なります。再読み込み後、保存値を読み直してください。</p><button id="reload-extension" class="primary" type="button">拡張機能を再読み込み</button></div>
+    <section class="settings-card"><h2>確認の実行</h2><label class="settings-row"><span><strong>監視時の開き方</strong><small>確認後に自動で閉じます</small></span><select id="check-mode"><option value="pinned-tab">非アクティブなピン留めタブ</option><option value="window">新しい非アクティブウィンドウ</option></select></label><label class="settings-row"><span><strong>同時確認数</strong><small>期限に達した監視を指定した件数ずつ確認します。既定値は4件です。</small></span><input id="scan-concurrency" type="number" min="1" step="1" value="4"></label><p id="settings-status" role="status"></p></section>
+    <section class="settings-card"><h2>データ</h2><p>タグ、ごみ箱の設定も含めて書き出します。取得内容と変更履歴は含みません。</p><div class="settings-buttons"><button id="export" class="secondary" type="button">エクスポート</button><label class="secondary file-label">インポート<input id="import" type="file" accept=".json,application/json" hidden></label></div><p id="import-status" role="status"></p></section>
+  </main>
+  <script type="module" src="settings.js"></script>
+</body></html>

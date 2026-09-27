@@ -134,3 +134,52 @@
 .scan-concurrency-bar input{width:90px;padding:8px 10px;border:1px solid #bdd8ce;border-radius:7px;background:#fff;color:#244c47;font-size:12px}
 .scan-concurrency-bar input:focus{outline:2px solid #13a48f}
 @media(max-width:600px){.scan-concurrency-bar{align-items:stretch;flex-direction:column;gap:8px}.scan-concurrency-bar>div{align-items:start;flex-direction:column;gap:3px}}
+
+/* Navigation and settings */
+.dashboard .shell{display:flex;min-height:100vh;padding:0;max-width:none}
+.sidebar{width:226px;flex:0 0 226px;background:#f2f8f6;border-right:1px solid #dceae6;padding:19px 13px;display:flex;flex-direction:column;gap:16px;position:sticky;top:0;height:100vh;overflow:auto}
+.sidebar .brand{padding:2px 8px 16px;border-bottom:1px solid #dceae6}
+.sidebar nav{display:grid;gap:3px}
+.nav-item{display:flex;width:100%;justify-content:space-between;align-items:center;border:0;border-radius:8px;padding:10px 12px;background:transparent;color:#31595b;text-align:left;font-size:13px;font-weight:700;text-decoration:none;cursor:pointer}
+.nav-item:hover,.nav-item.active{background:#dcefe9;color:#087b70}
+.nav-item span{color:#78938e;font-size:11px}
+.tag-head{display:flex;align-items:center;justify-content:space-between;padding:0 11px;color:#6b8989;font-size:11px}
+.tag-head button,.tag-menu-button{border:0;background:transparent;color:#597c79;cursor:pointer;font-size:19px}
+.tag-nav-row{display:flex;align-items:center}
+.tag-nav-row .nav-item{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tag-nav-row .tag-menu-button{font-size:16px}
+.settings-link{margin-top:auto}
+.content-shell{flex:1;min-width:0;padding:0 22px}
+.content-shell .topbar{display:flex;height:86px;align-items:center;justify-content:space-between;border-bottom:1px solid #e3eeeb}
+.content-shell .topbar h1{font-size:23px;margin:0}
+.content-shell .topbar p{margin:4px 0 0;font-size:11px;color:#7b9293}
+.content-shell main{padding-top:18px}
+.view-actions{display:flex;align-items:center;gap:14px;margin-bottom:13px;min-height:34px}
+.view-actions .primary{padding:8px 15px}
+.view-actions [hidden]{display:none}
+#batch-progress{font-size:11px;color:#55757a}
+.monitor-card.recently-read{background:#eef1f1;opacity:.5}
+.tag-choices{display:flex;flex-wrap:wrap;gap:8px}
+.tag-choice{display:flex!important;flex-direction:row!important;align-items:center;border:1px solid #d4e3de;border-radius:8px;padding:7px 10px}
+.tag-choice input{width:auto!important}
+.settings-page{background:#f5f9f8;color:#18343c}
+.settings-wrap{max-width:860px;margin:0 auto;padding:32px 20px}
+.settings-header{margin-bottom:25px}
+.settings-header a{color:#087b70;text-decoration:none;font-size:13px}
+.settings-header h1{margin:14px 0 5px;font-size:28px}
+.settings-header p,.settings-card p{color:#6f888b;font-size:13px}
+.settings-card{background:white;border:1px solid #dce9e5;border-radius:13px;padding:23px;margin-bottom:16px}
+.settings-card h2{font-size:17px;margin:0 0 13px}
+.settings-row{display:flex;justify-content:space-between;align-items:center;gap:20px;padding:16px 0;border-top:1px solid #ebf0ee}
+.settings-row span{display:grid;gap:4px}.settings-row strong{font-size:13px}.settings-row small{font-size:11px;color:#789092}
+.settings-row select,.settings-row input{border:1px solid #c6d9d3;border-radius:8px;padding:9px 11px;background:#fff;color:#244c47;font-size:12px}
+.settings-row input{width:85px}.settings-buttons{display:flex;gap:9px;margin-top:20px}
+.reload-banner{padding:18px;border:1px solid #e8b8a5;background:#fff2ec;border-radius:12px;margin-bottom:16px}
+.reload-banner[hidden]{display:none}.reload-banner strong{color:#a04430}
+#settings-status,#import-status{min-height:18px}
+@media(max-width:800px){.sidebar{width:160px;flex-basis:160px}.content-shell{padding:0 10px}}
+@media(max-width:600px){.dashboard .shell{display:block}.sidebar{position:static;width:auto;height:auto;display:block;padding:8px}.sidebar .brand,.tag-head,#tag-nav{display:none!important}.sidebar nav:first-of-type{display:flex;overflow:auto}.sidebar .nav-item{white-space:nowrap;width:auto}.sidebar .settings-link{display:inline-flex}.content-shell{padding:0 10px}.settings-row{align-items:stretch;flex-direction:column}}
+
+
+@media(max-width:1100px){.monitor-actions{flex-wrap:wrap}.row-button{font-size:10px;min-width:auto;width:auto;padding:0 6px}.row-button::before{content:none}}
+@media(max-width:600px){.monitor-main{grid-template-columns:minmax(100px,2fr) minmax(90px,3fr) minmax(100px,1.6fr)}.monitor-actions .status{display:inline-flex}.row-button{min-width:auto;width:auto;font-size:10px}}
