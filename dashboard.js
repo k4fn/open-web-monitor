@@ -1,4 +1,5 @@
 import { cleanUrl, intervalParts, intervalFromParts, intervalLabel } from "./lib.js";
+import { visibleMonitorsForView, openMonitorLinks } from "./watchlist.js";
 
 const list = document.querySelector("#list");
 const search = document.querySelector("#search");
@@ -9,6 +10,7 @@ const bulkUrls = document.querySelector("#bulk-urls");
 const bulkPreview = document.querySelector("#bulk-preview");
 const bulkSubmit = document.querySelector("#bulk-submit");
 let monitors = [];
+let visibleMonitors = [];
 let tags = [];
 let view = new URLSearchParams(location.search).get("view") || "all";
 let selectedTag = new URLSearchParams(location.search).get("tag");
@@ -132,7 +134,12 @@ function renderDetail(monitor) {
     checkbox.checked = (monitor.tagIds || []).includes(tag.id);
     label.append(checkbox, el("span", "", tag.name)); tagChoices.append(label);
   }
-  tagSection.append(tagChoices); form.append(tagSection);
+  tagSection.append(tagChoices);
+  const tagCreate = el("div", "tag-create");
+  const tagName = el("input"); tagName.type = "text"; tagName.className = "tag-create-input";
+  tagName.placeholder = "新しいタグ名"; tagName.maxLength = 80; tagName.setAttribute("aria-label", "新しいタグ名");
+  tagCreate.append(tagName, button("タグを作成して選択", "createTagInEditor", monitor.id, "secondary"));
+  tagSection.append(tagCreate); form.append(tagSection);
   const schedule = el("section", "edit-section schedule-section");
   schedule.append(el("h4", "", "確認間隔"), el("p", "section-hint", "1 分〜7 日。Chrome が起動中に確認します。"));
   const interval = el("div", "interval-editor");
@@ -200,20 +207,11 @@ function renderNavigation() {
 
 function render() {
   renderNavigation();
-  const query = search.value.trim().toLowerCase();
-  const visible = monitors.filter(m => {
-    if (!(m.title+" "+m.url+" "+(m.text || "")).toLowerCase().includes(query)) return false;
-    if (view === "trash") return Boolean(m.trashedAt);
-    if (m.trashedAt) return false;
-    if (view === "unread") return m.history?.some(h => !h.read) || recentlyRead.has(m.id);
-    if (view === "error") return m.status === "error";
-    if (view === "tag") return m.tagIds?.includes(selectedTag);
-    return true;
-  }).sort((a,b) => {
-    if (sort.value === "name") return a.title.localeCompare(b.title, "ja");
-    if (sort.value === "checked") return (b.lastCheckAt || 0) - (a.lastCheckAt || 0);
-    return (b.history?.[0]?.at || b.createdAt) - (a.history?.[0]?.at || a.createdAt);
+  const visible = visibleMonitorsForView(monitors, {
+    view, selectedTag, query: search.value, recentlyRead, sort: sort.value
   });
+  visibleMonitors = visible;
+  document.querySelector("#open-all-links").disabled = !visible.length;
   document.querySelector("#visible-count").textContent = visible.length+" 件";
   list.replaceChildren();
   if (!visible.length) { list.append(el("div", "empty", "ここに表示する監視はありません")); return; }
@@ -284,6 +282,13 @@ document.querySelector("#add-form").addEventListener("submit", async event => {
   } catch (error) { message.textContent = error.message; }
 });
 
+editDialog.addEventListener("keydown", event => {
+  if (event.key === "Enter" && event.target.matches(".tag-create-input")) {
+    event.preventDefault();
+    event.target.closest(".tag-create").querySelector("button").click();
+  }
+});
+
 editDialog.addEventListener("submit", async event => {
   if (!event.target.matches(".edit-form")) return;
   event.preventDefault();
@@ -310,6 +315,25 @@ document.addEventListener("click", async event => {
   if (!target) return;
   const { action, id } = target.dataset;
   if (action === "viewTag") { navigate("tag", id); return; }
+  if (action === "createTagInEditor") {
+    const form = target.closest(".edit-form");
+    const input = form.querySelector(".tag-create-input");
+    const name = input.value.trim();
+    if (!name) { input.focus(); return; }
+    try {
+      const tag = await send("createTag", { name });
+      tags.push(tag);
+      const label = el("label", "tag-choice");
+      const checkbox = el("input"); checkbox.type = "checkbox"; checkbox.name = "tagIds";
+      checkbox.value = tag.id; checkbox.checked = true;
+      label.append(checkbox, el("span", "", tag.name));
+      form.querySelector(".tag-choices").append(label);
+      input.value = "";
+      renderNavigation();
+      showToast("タグを作成しました。変更を保存すると監視に付きます");
+    } catch (error) { showToast(error.message, true); }
+    return;
+  }
   if (action === "tagMenu") {
     const tag = tags.find(item => item.id === id); if (!tag) return;
     const name = prompt("タグ名を変更します。空欄にすると削除を確認します。", tag.name);
@@ -419,6 +443,27 @@ async function refreshBatchProgress() {
   node.textContent = label+": "+job.done+"/"+job.ids.length+" 件完了 · 失敗 "+job.failed+" 件"+(job.status === "running" ? "（実行中）" : "");
   document.querySelector("#batch-check").disabled = job.status === "running";
 }
+document.querySelector("#open-all-links").addEventListener("click", async event => {
+  const button = event.currentTarget;
+  const targets = [...visibleMonitors];
+  if (!targets.length) return;
+  const openingUnread = view === "unread";
+  button.disabled = true;
+  try {
+    const result = await openMonitorLinks(targets, {
+      createTab: url => chrome.tabs.create({ url, active: false }),
+      markRead: openingUnread ? id => send("markRead", { id }) : null,
+      onOpened: monitor => { if (openingUnread) recentlyRead.add(monitor.id); }
+    });
+    await refresh();
+    const issues = [
+      result.failed ? "開けなかったリンク " + result.failed + " 件" : "",
+      result.readFailed ? "既読処理失敗 " + result.readFailed + " 件" : ""
+    ].filter(Boolean);
+    showToast(result.opened + " 件のリンクを開きました" + (issues.length ? " · " + issues.join(" · ") : ""), Boolean(issues.length));
+  } catch (error) { showToast(error.message, true); }
+  finally { button.disabled = !visibleMonitors.length; }
+});
 document.querySelector("#batch-check").addEventListener("click", async () => {
   try { await send("startBatch", { scope: view === "error" ? "error" : "all" }); await refreshBatchProgress(); }
   catch (error) { showToast(error.message, true); }

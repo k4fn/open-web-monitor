@@ -16,7 +16,7 @@ test("empty content is a change and notification failures do not mark checks as 
   let tabCreateCount = 0;
   const emptyEvent = () => ({ addListener() {}, removeListener() {} });
   globalThis.chrome = {
-    runtime: { onInstalled: emptyEvent(), onStartup: emptyEvent(), onMessage: { addListener(fn) { handler = fn; } } },
+    runtime: { onInstalled: emptyEvent(), onStartup: emptyEvent(), getURL(path) { return "chrome-extension://test/"+path; }, onMessage: { addListener(fn) { handler = fn; } } },
     alarms: { onAlarm: { addListener(fn) { alarmHandler = fn; } }, async get() { return {}; } },
     notifications: { onClicked: emptyEvent(), async create() { throw new Error("notifications disabled"); } },
     action: { async setBadgeText() {}, async setBadgeBackgroundColor() {} },
@@ -82,6 +82,9 @@ test("empty content is a change and notification failures do not mark checks as 
   assert.equal(navigated.ok, true);
   assert.deepEqual(openedTab, { url: "https://example.org/new", active: true });
   assert.deepEqual(pickerConfig, { id, selector: ".new", ignoreSelectors: [".ad"] });
+  const editor = await request("openEditor", { id });
+  assert.equal(editor.ok, true);
+  assert.deepEqual(openedTab, { url: "chrome-extension://test/dashboard.html#" + id, active: true });
 
   const bulk = await request("bulkDuplicate", { id, urls: ["https://example.net/one", "https://example.net/two"] });
   assert.deepEqual(bulk.value, { created: 2, skipped: 0 });

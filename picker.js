@@ -2,6 +2,7 @@
   if (globalThis.__openWebMonitorPicker) return;
   globalThis.__openWebMonitorPicker = true;
   const config = globalThis.__openWebMonitorPickerConfig || null;
+  let savedId = config?.id || null;
   delete globalThis.__openWebMonitorPickerConfig;
   const include = config?.selector ? [{ value: config.selector, candidates: [] }] : [];
   const ignore = (config?.ignoreSelectors || []).map(value => ({ value, candidates: [] }));
@@ -238,10 +239,17 @@
       const result = globalThis.__openWebMonitorExtract(selector, ignoreSelectors);
       if (!result.text) throw new Error("抽出テキストがありません。選択を見直してください。");
       $(".save").disabled = true;
-      const response = await chrome.runtime.sendMessage(config?.id
-        ? { type: "update", id: config.id, patch: { url, selector, ignoreSelectors } }
+      const response = await chrome.runtime.sendMessage(savedId
+        ? { type: "update", id: savedId, patch: { url, selector, ignoreSelectors } }
         : { type: "create", monitor: { url, title: document.title, selector, ignoreSelectors } });
       if (!response?.ok) throw new Error(response?.error || "保存に失敗しました");
+      savedId = response.value?.id || savedId;
+      const opened = await chrome.runtime.sendMessage({ type: "openEditor", id: savedId });
+      if (!opened?.ok) {
+        $("#status").textContent = "選択は保存しました。編集画面を開けませんでした: " + (opened?.error || "再試行してください");
+        $(".save").disabled = false;
+        return;
+      }
       close();
     } catch (error) { $("#status").textContent = error.message; $(".save").disabled = false; }
   });

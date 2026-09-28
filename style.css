@@ -183,3 +183,10 @@
 
 @media(max-width:1100px){.monitor-actions{flex-wrap:wrap}.row-button{font-size:10px;min-width:auto;width:auto;padding:0 6px}.row-button::before{content:none}}
 @media(max-width:600px){.monitor-main{grid-template-columns:minmax(100px,2fr) minmax(90px,3fr) minmax(100px,1.6fr)}.monitor-actions .status{display:inline-flex}.row-button{min-width:auto;width:auto;font-size:10px}}
+
+.tag-create{display:flex;gap:8px;align-items:center;max-width:440px;margin-top:12px}
+.edit-form .tag-create input{flex:1;min-width:0}
+.tag-create .secondary{white-space:nowrap}
+@media(max-width:600px){.tag-create{flex-wrap:wrap}.tag-create .secondary{width:100%}}
+.view-actions{flex-wrap:wrap}
+#open-all-links{white-space:nowrap}

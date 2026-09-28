@@ -446,6 +446,11 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         return { created: accepted.length, skipped };
       }
       case "openPicker": return await openPickerForMonitor(message.id);
+      case "openEditor": {
+        if (!await getMonitor(message.id)) throw new Error("監視が見つかりません");
+        await chrome.tabs.create({ url: chrome.runtime.getURL("dashboard.html#" + encodeURIComponent(message.id)), active: true });
+        return true;
+      }
       case "pickerNavigate": {
         const draft = message.draft || {};
         if (draft.id && !await getMonitor(draft.id)) throw new Error("監視が見つかりません");
