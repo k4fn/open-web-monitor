@@ -1,16 +1,18 @@
 import { cleanUrl, intervalParts, intervalFromParts, intervalLabel } from "./lib.js";
-import { visibleMonitorsForView, openMonitorLinks } from "./watchlist.js";
+import { visibleMonitorsForView, openMonitorLinks, selectableMonitorIds } from "./watchlist.js";
 
 const list = document.querySelector("#list");
 const search = document.querySelector("#search");
 const sort = document.querySelector("#sort");
 const editDialog = document.querySelector("#edit-dialog");
 const bulkDialog = document.querySelector("#bulk-dialog");
+const bulkEditDialog = document.querySelector("#bulk-edit-dialog");
 const bulkUrls = document.querySelector("#bulk-urls");
 const bulkPreview = document.querySelector("#bulk-preview");
 const bulkSubmit = document.querySelector("#bulk-submit");
 let monitors = [];
 let visibleMonitors = [];
+const selectedIds = new Set();
 let tags = [];
 let view = new URLSearchParams(location.search).get("view") || "all";
 let selectedTag = new URLSearchParams(location.search).get("tag");
@@ -53,7 +55,7 @@ function showToast(message, error = false) {
 
 async function send(type, payload = {}) {
   const result = await chrome.runtime.sendMessage({ type, ...payload });
-  if (!result?.ok) throw new Error(result?.error || "操作に失敗しました");
+  if (!result?.ok) throw new Error(result?.error === "不明な操作です" ? "拡張機能を再読み込みしてください" : result?.error || "操作に失敗しました");
   return result.value;
 }
 
@@ -160,6 +162,15 @@ function renderDetail(monitor) {
   }
   schedule.append(presets); form.append(schedule);
 
+  const notificationSection = el("section", "edit-section");
+  notificationSection.append(el("h4", "", "変更通知"));
+  const notificationLabel = el("label", "notification-toggle");
+  const notificationInput = el("input"); notificationInput.type = "checkbox";
+  notificationInput.name = "notificationsEnabled"; notificationInput.checked = monitor.notificationsEnabled !== false;
+  notificationLabel.append(notificationInput, el("span", "", "この監視で変更が見つかったら通知する"));
+  notificationSection.append(notificationLabel, el("p", "section-hint", "OFFでも変更履歴と未読表示は記録されます。"));
+  form.append(notificationSection);
+
   const footer = el("div", "edit-footer");
   const save = button("変更を保存", "save", monitor.id, "primary");
   save.type = "submit";
@@ -205,6 +216,26 @@ function renderNavigation() {
   document.querySelector("#unread").textContent = counts.unread;
 }
 
+function syncSelectionUI() {
+  const eligibleIds = selectableMonitorIds(visibleMonitors);
+  const visibleIds = new Set(eligibleIds);
+  for (const id of selectedIds) if (!visibleIds.has(id)) selectedIds.delete(id);
+  const selectAll = document.querySelector("#select-all");
+  selectAll.disabled = eligibleIds.length === 0;
+  selectAll.checked = eligibleIds.length > 0 && eligibleIds.every(id => selectedIds.has(id));
+  selectAll.indeterminate = selectedIds.size > 0 && !selectAll.checked;
+  document.querySelector("#selected-count").textContent = selectedIds.size;
+  document.querySelector("#bulk-edit-open").disabled = selectedIds.size === 0;
+  if (bulkEditDialog.open) {
+    document.querySelector("#bulk-edit-count").textContent = selectedIds.size + " 件の監視を編集します";
+    if (!selectedIds.size) document.querySelector("#bulk-edit-submit").disabled = true;
+  }
+  for (const checkbox of list.querySelectorAll(".monitor-select")) {
+    checkbox.checked = selectedIds.has(checkbox.dataset.id);
+    checkbox.closest(".monitor-card").classList.toggle("selected", checkbox.checked);
+  }
+}
+
 function render() {
   renderNavigation();
   const visible = visibleMonitorsForView(monitors, {
@@ -214,17 +245,25 @@ function render() {
   document.querySelector("#open-all-links").disabled = !visible.length;
   document.querySelector("#visible-count").textContent = visible.length+" 件";
   list.replaceChildren();
-  if (!visible.length) { list.append(el("div", "empty", "ここに表示する監視はありません")); return; }
+  if (!visible.length) { list.append(el("div", "empty", "ここに表示する監視はありません")); syncSelectionUI(); return; }
   for (const monitor of visible) {
     const unread = (monitor.history || []).filter(h => !h.read).length;
     const faded = view === "unread" && recentlyRead.has(monitor.id) && !unread;
     const card = el("article", "monitor-card"+(unread ? " has-unread" : "")+(faded ? " recently-read" : ""));
     const main = el("div", "monitor-main"), left = el("div", "monitor-info");
+    const infoRow = el("div", "monitor-info-row");
+    if (!monitor.trashedAt) {
+      const checkbox = el("input", "monitor-select");
+      checkbox.type = "checkbox"; checkbox.dataset.id = monitor.id;
+      checkbox.checked = selectedIds.has(monitor.id);
+      checkbox.setAttribute("aria-label", (monitor.title || monitor.url) + " を選択");
+      infoRow.append(checkbox);
+    }
     const link = el("a", "title-link", monitor.title || new URL(monitor.url).hostname);
     link.href = monitor.url; link.target = "_blank"; link.rel = "noopener noreferrer"; link.dataset.monitorId = monitor.id;
-    left.append(link);
+    infoRow.append(link); left.append(infoRow);
     const tagNames = tags.filter(t => monitor.tagIds?.includes(t.id)).map(t => t.name);
-    left.append(el("div", "meta", new URL(monitor.url).hostname+(monitor.selector ? " · 部分" : " · 全体")+(tagNames.length ? " · "+tagNames.join(", ") : "")));
+    left.append(el("div", "meta", new URL(monitor.url).hostname+(monitor.selector ? " · 部分" : " · 全体")+(tagNames.length ? " · "+tagNames.join(", ") : "")+(monitor.notificationsEnabled === false ? " · 通知OFF" : "")));
     const summary = monitor.status === "error" ? monitor.error : monitor.text === null ? "初回の確認待ち" : monitor.text || "（空のテキスト）";
     const excerpt = el("div", "excerpt", String(summary || "").slice(0,260)); excerpt.title = String(summary || "").slice(0,1000);
     const changes = el("div", "change-count", unread ? unread+" 件" : "—");
@@ -239,6 +278,7 @@ function render() {
     }
     main.append(left, excerpt, changes, checked, interval, actions); card.append(main); list.append(card);
   }
+  syncSelectionUI();
 }
 
 async function openEditor(id) {
@@ -295,6 +335,7 @@ editDialog.addEventListener("submit", async event => {
   try {
     const patch = Object.fromEntries(new FormData(event.target));
     patch.tagIds = [...event.target.querySelectorAll('input[name="tagIds"]:checked')].map(input => input.value);
+    patch.notificationsEnabled = event.target.elements.notificationsEnabled.checked;
     patch.intervalMinutes = intervalFromParts(patch.intervalValue, patch.intervalUnit);
     delete patch.intervalValue; delete patch.intervalUnit;
     patch.url = cleanUrl(patch.url);
@@ -417,7 +458,67 @@ document.querySelector("#bulk-form").addEventListener("submit", async event => {
   }
 });
 
+function updateBulkEditControls() {
+  const intervalEnabled = document.querySelector("#bulk-set-interval").checked;
+  const tagMode = document.querySelector("#bulk-tag-mode").value;
+  document.querySelector("#bulk-interval-value").disabled = !intervalEnabled;
+  document.querySelector("#bulk-interval-unit").disabled = !intervalEnabled;
+  const tagCheckboxes = [...document.querySelectorAll('#bulk-tag-choices input[type="checkbox"]')];
+  for (const checkbox of tagCheckboxes) checkbox.disabled = tagMode === "none";
+  const hasChosenTags = tagCheckboxes.some(checkbox => checkbox.checked);
+  document.querySelector("#bulk-edit-submit").disabled =
+    !selectedIds.size || (!intervalEnabled && tagMode === "none") || (tagMode !== "none" && !hasChosenTags);
+}
+
+document.querySelector("#bulk-edit-open").addEventListener("click", () => {
+  if (!selectedIds.size) return;
+  document.querySelector("#bulk-edit-count").textContent = selectedIds.size + " 件の監視を編集します";
+  document.querySelector("#bulk-edit-error").textContent = "";
+  document.querySelector("#bulk-edit-form").reset();
+  const choices = document.querySelector("#bulk-tag-choices"); choices.replaceChildren();
+  for (const tag of tags) {
+    const label = el("label", "tag-choice");
+    const checkbox = el("input"); checkbox.type = "checkbox"; checkbox.value = tag.id;
+    label.append(checkbox, el("span", "", tag.name)); choices.append(label);
+  }
+  if (!tags.length) choices.append(el("p", "section-hint", "タグがありません。サイドバーから作成してください。"));
+  updateBulkEditControls();
+  bulkEditDialog.showModal();
+});
+document.querySelector("#bulk-edit-close").addEventListener("click", () => bulkEditDialog.close());
+document.querySelector("#bulk-edit-cancel").addEventListener("click", () => bulkEditDialog.close());
+document.querySelector("#bulk-set-interval").addEventListener("change", updateBulkEditControls);
+document.querySelector("#bulk-tag-mode").addEventListener("change", updateBulkEditControls);
+document.querySelector("#bulk-tag-choices").addEventListener("change", updateBulkEditControls);
+document.querySelector("#bulk-edit-form").addEventListener("submit", async event => {
+  event.preventDefault();
+  const submit = document.querySelector("#bulk-edit-submit");
+  const errorNote = document.querySelector("#bulk-edit-error");
+  const ids = [...selectedIds];
+  const tagMode = document.querySelector("#bulk-tag-mode").value;
+  const payload = { ids, tagMode };
+  try {
+    if (document.querySelector("#bulk-set-interval").checked) {
+      payload.intervalMinutes = intervalFromParts(
+        document.querySelector("#bulk-interval-value").value,
+        document.querySelector("#bulk-interval-unit").value
+      );
+    }
+    if (tagMode !== "none") {
+      payload.tagIds = [...document.querySelectorAll('#bulk-tag-choices input[type="checkbox"]:checked')].map(input => input.value);
+      if (!payload.tagIds.length) throw new Error("変更するタグを選択してください");
+    }
+    submit.disabled = true;
+    const result = await send("bulkUpdate", payload);
+    bulkEditDialog.close();
+    selectedIds.clear();
+    await refresh();
+    showToast(result.updated + " 件の監視を更新しました");
+  } catch (error) { errorNote.textContent = error.message; updateBulkEditControls(); }
+});
+
 function navigate(next, tagId = null) {
+  selectedIds.clear();
   view = next; selectedTag = tagId;
   const params = new URLSearchParams();
   if (view !== "all") params.set("view", view);
@@ -432,6 +533,7 @@ document.querySelector("#add-tag").addEventListener("click", async () => {
   catch (error) { showToast(error.message, true); }
 });
 window.addEventListener("popstate", () => {
+  selectedIds.clear();
   const params = new URLSearchParams(location.search);
   view = params.get("view") || "all"; selectedTag = params.get("tag"); render();
 });
@@ -468,7 +570,18 @@ document.querySelector("#batch-check").addEventListener("click", async () => {
   try { await send("startBatch", { scope: view === "error" ? "error" : "all" }); await refreshBatchProgress(); }
   catch (error) { showToast(error.message, true); }
 });
-search.addEventListener("input", render);
+search.addEventListener("input", () => { selectedIds.clear(); render(); });
+document.querySelector("#select-all").addEventListener("change", event => {
+  selectedIds.clear();
+  if (event.target.checked) for (const id of selectableMonitorIds(visibleMonitors)) selectedIds.add(id);
+  syncSelectionUI();
+});
+list.addEventListener("change", event => {
+  if (!event.target.matches(".monitor-select")) return;
+  if (event.target.checked) selectedIds.add(event.target.dataset.id);
+  else selectedIds.delete(event.target.dataset.id);
+  syncSelectionUI();
+});
 sort.addEventListener("change", render);
 chrome.storage.onChanged.addListener((_changes, area) => { if (area === "local") scheduleRefresh(); });
 editDialog.addEventListener("focusout", () => setTimeout(() => {

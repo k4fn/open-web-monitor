@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { cleanUrl, cleanInterval, cleanConcurrency, runWithConcurrency, intervalParts, intervalFromParts, intervalLabel, cleanIgnoreSelectors, normalizeText, difference } from "./lib.js";
+import { cleanUrl, cleanInterval, cleanConcurrency, runWithConcurrency, intervalParts, intervalFromParts, intervalLabel, cleanIgnoreSelectors, normalizeText, difference, makeExportData } from "./lib.js";
 
 test("web URL only, without fragment", () => {
   assert.equal(cleanUrl("https://example.com/page#part"), "https://example.com/page");
@@ -59,4 +59,15 @@ test("all due monitors run within the selected concurrency, including beyond 24"
   assert.equal(cleanConcurrency("4"), 4);
   assert.throws(() => cleanConcurrency(0));
   assert.throws(() => cleanConcurrency(1.5));
+});
+
+test("export keeps notification preferences and defaults older records to on", () => {
+  const data = makeExportData([
+    { url: "https://a.example/", title: "A", intervalMinutes: 15, enabled: true, notificationsEnabled: false },
+    { url: "https://b.example/", title: "B", intervalMinutes: 60, enabled: false }
+  ], [{ id: "tag-1", name: "Group" }]);
+  assert.equal(data.version, 2);
+  assert.equal(data.monitors[0].notificationsEnabled, false);
+  assert.equal(data.monitors[1].notificationsEnabled, true);
+  assert.deepEqual(data.tags, [{ id: "tag-1", name: "Group" }]);
 });

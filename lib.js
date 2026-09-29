@@ -82,3 +82,14 @@ export function difference(before, after) {
 
 export function monitorKey(id) { return PREFIX + id; }
 export function isMonitorKey(key) { return key.startsWith(PREFIX); }
+
+export function makeExportData(monitors, tags) {
+  return {
+    version: 2,
+    tags,
+    monitors: monitors.map(({ url, title, autoTitle, selector, ignoreSelectors, intervalMinutes, enabled, tagIds, trashedAt, notificationsEnabled }) => ({
+      url, title, autoTitle, selector, ignoreSelectors, intervalMinutes, enabled,
+      tagIds: tagIds || [], trashedAt: trashedAt || null, notificationsEnabled: notificationsEnabled !== false
+    }))
+  };
+}

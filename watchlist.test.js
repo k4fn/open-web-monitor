@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { visibleMonitorsForView, openMonitorLinks } from "./watchlist.js";
+import { visibleMonitorsForView, openMonitorLinks, selectableMonitorIds } from "./watchlist.js";
 
 test("visible links follow the current screen and search", () => {
   const items = [
@@ -17,6 +17,8 @@ test("visible links follow the current screen and search", () => {
   assert.deepEqual(ids("trash"), ["c"]);
   assert.deepEqual(ids("tag", { selectedTag: "t" }), ["b", "a"]);
   assert.deepEqual(ids("all", { query: "Beta" }), ["b"]);
+  assert.deepEqual(selectableMonitorIds(visibleMonitorsForView(items, { view: "all", query: "Beta" })), ["b"]);
+  assert.deepEqual(selectableMonitorIds(visibleMonitorsForView(items, { view: "trash" })), []);
 });
 
 test("open all continues after a failed tab and only marks opened unread links", async () => {

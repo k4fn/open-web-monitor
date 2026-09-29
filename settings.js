@@ -1,3 +1,4 @@
+import { makeExportData } from "./lib.js";
 import { cleanConcurrency } from "./lib.js";
 const banner = document.querySelector("#reload-banner");
 const status = document.querySelector("#settings-status");
@@ -20,7 +21,7 @@ async function send(type, payload = {}) {
 async function load() {
   try {
     const capabilities = await send("getCapabilities");
-    if (capabilities?.protocol !== 2) { stale(); return; }
+    if (capabilities?.protocol !== 3) { stale(); return; }
     checkMode.value = await send("getCheckMode");
     concurrency.value = await send("getScanConcurrency");
   } catch (error) { if (!banner.hidden) return; status.textContent = error.message; }
@@ -40,9 +41,7 @@ document.querySelector("#reload-extension").addEventListener("click", () => chro
 document.querySelector("#export").addEventListener("click", async () => {
   try {
     const [monitors, tags] = await Promise.all([send("list"), send("listTags")]);
-    const items = monitors.map(({ url,title,autoTitle,selector,ignoreSelectors,intervalMinutes,enabled,tagIds,trashedAt }) =>
-      ({ url,title,autoTitle,selector,ignoreSelectors,intervalMinutes,enabled,tagIds:tagIds || [],trashedAt:trashedAt || null }));
-    const blob = new Blob([JSON.stringify({ version: 2, tags, monitors: items }, null, 2)], { type: "application/json" });
+    const blob = new Blob([JSON.stringify(makeExportData(monitors, tags), null, 2)], { type: "application/json" });
     const anchor = document.createElement("a"); anchor.href = URL.createObjectURL(blob);
     anchor.download = "open-web-monitor-"+new Date().toISOString().slice(0,10)+".json";
     anchor.click(); setTimeout(() => URL.revokeObjectURL(anchor.href), 1000);

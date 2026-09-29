@@ -14,11 +14,13 @@ test("empty content is a change and notification failures do not mark checks as 
   let pickerConfig;
   let alarmHandler;
   let tabCreateCount = 0;
+  let notificationClicked;
+  let notificationAttempts = 0;
   const emptyEvent = () => ({ addListener() {}, removeListener() {} });
   globalThis.chrome = {
     runtime: { onInstalled: emptyEvent(), onStartup: emptyEvent(), getURL(path) { return "chrome-extension://test/"+path; }, onMessage: { addListener(fn) { handler = fn; } } },
     alarms: { onAlarm: { addListener(fn) { alarmHandler = fn; } }, async get() { return {}; } },
-    notifications: { onClicked: emptyEvent(), async create() { throw new Error("notifications disabled"); } },
+    notifications: { onClicked: { addListener(fn) { notificationClicked = fn; } }, async create() { notificationAttempts++; throw new Error("notifications disabled"); } },
     action: { async setBadgeText() {}, async setBadgeBackgroundColor() {} },
     tabs: {
       onUpdated: emptyEvent(), onRemoved: emptyEvent(), async create(options) { openedTab = options; tabCreateCount++; return { id: 1 }; },
@@ -55,6 +57,28 @@ test("empty content is a change and notification failures do not mark checks as 
   assert.equal(second.value.status, "ok");
   assert.equal(second.value.text, "");
   assert.equal(second.value.history.length, 1);
+  assert.equal(notificationAttempts, 1);
+  await request("update", { id, patch: { notificationsEnabled: false } });
+  pageText = "third value";
+  const muted = await request("check", { id });
+  assert.equal(muted.value.history.length, 2);
+  assert.equal(muted.value.status, "ok");
+  assert.equal(notificationAttempts, 1);
+  notificationClicked("change:" + id + ":123");
+  for (let i = 0; i < 20; i++) {
+    if (openedTab?.active === true) break;
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+  assert.deepEqual(openedTab, { url: "https://example.com/", active: true });
+  assert.ok((await request("list")).value.find(item => item.id === id).history.every(entry => entry.read));
+  const tabsBeforeMissing = tabCreateCount;
+  notificationClicked("change:missing:123");
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.equal(tabCreateCount, tabsBeforeMissing);
+  await request("update", { id, patch: { notificationsEnabled: true } });
+  pageText = "";
+  await request("check", { id });
+  assert.equal(notificationAttempts, 2);
 
   assert.equal((await request("setCheckMode", { mode: "window" })).value, "window");
   assert.equal((await request("getCheckMode")).value, "window");

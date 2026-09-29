@@ -7,7 +7,7 @@ const CHECK_MODES = new Set(["pinned-tab", "window"]);
 const running = new Map();
 const TAGS_KEY = "tags";
 const BATCH_KEY = "batchCheckJob";
-const PROTOCOL_VERSION = 2;
+const PROTOCOL_VERSION = 3;
 let scanInProgress = false;
 let batchInProgress = false;
 let activeChecks = 0;
@@ -84,7 +84,8 @@ async function createMonitor(input) {
     id: crypto.randomUUID(), url, title: String(input.title || new URL(url).hostname).trim().slice(0, 120), autoTitle: Boolean(input.autoTitle),
     selector, ignoreSelectors, intervalMinutes: cleanInterval(input.intervalMinutes ?? 15), enabled: input.enabled === undefined ? true : Boolean(input.enabled),
     createdAt: Date.now(), nextCheckAt: Date.now(), lastCheckAt: null,
-    status: "new", error: null, text: null, history: [], tagIds, trashedAt: null
+    status: "new", error: null, text: null, history: [], tagIds, trashedAt: null,
+    notificationsEnabled: input.notificationsEnabled !== false
   };
   await saveMonitor(monitor);
   await ensureAlarm();
@@ -222,7 +223,7 @@ async function checkMonitor(id) {
       latest.lastCheckAt = checkedAt;
       latest.nextCheckAt = Date.now() + latest.intervalMinutes * 60000;
       await saveMonitor(latest);
-      if (notificationMessage) {
+      if (notificationMessage && latest.notificationsEnabled !== false) {
         try {
           await chrome.notifications.create(`change:${id}:${Date.now()}`, {
             type: "basic", iconUrl: "icons/icon128.png", title: `${latest.title} に変更があります`,
@@ -340,7 +341,8 @@ async function importData(payload) {
       ignoreSelectors: cleanIgnoreSelectors(item.ignoreSelectors), intervalMinutes: cleanInterval(item.intervalMinutes ?? 15),
       enabled: item.enabled === undefined ? true : Boolean(item.enabled), createdAt: Date.now(), nextCheckAt: Date.now(),
       lastCheckAt: null, status: "new", error: null, text: null, history: [],
-      tagIds: (item.tagIds || []).map(id => tagMap.get(String(id))), trashedAt: item.trashedAt ? Date.now() : null
+      tagIds: (item.tagIds || []).map(id => tagMap.get(String(id))), trashedAt: item.trashedAt ? Date.now() : null,
+      notificationsEnabled: item.notificationsEnabled !== false
     };
     entries[monitorKey(monitor.id)] = monitor;
   }
@@ -353,9 +355,17 @@ async function importData(payload) {
 chrome.runtime.onInstalled.addListener(() => { ensureAlarm(); updateBadge(); resumeBatch(); });
 chrome.runtime.onStartup.addListener(() => { ensureAlarm(); updateBadge(); resumeBatch(); });
 chrome.alarms.onAlarm.addListener(alarm => { if (alarm.name === ALARM) { scanDue(); resumeBatch(); } });
-chrome.notifications.onClicked.addListener(id => {
-  const monitorId = id.split(":")[1];
-  chrome.tabs.create({ url: chrome.runtime.getURL(`dashboard.html#${monitorId}`) });
+chrome.notifications.onClicked.addListener(notificationId => {
+  if (!notificationId.startsWith("change:")) return;
+  const monitorId = notificationId.split(":")[1];
+  (async () => {
+    const monitor = await getMonitor(monitorId);
+    if (!monitor) return;
+    await chrome.tabs.create({ url: monitor.url, active: true });
+    monitor.history = (monitor.history || []).map(entry => ({ ...entry, read: true }));
+    await saveMonitor(monitor);
+    await updateBadge();
+  })().catch(error => console.error("通知から監視先を開けませんでした", error));
 });
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
@@ -365,6 +375,34 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       case "getCapabilities": return { protocol: PROTOCOL_VERSION };
       case "listTags": return await getTags();
       case "getBatchJob": return await getBatchJob();
+      case "bulkUpdate": {
+        const ids = message.ids;
+        if (!Array.isArray(ids) || !ids.length || ids.some(id => typeof id !== "string") || new Set(ids).size !== ids.length) {
+          throw new Error("編集対象を選択してください");
+        }
+        const hasInterval = message.intervalMinutes !== undefined;
+        const intervalMinutes = hasInterval ? cleanInterval(message.intervalMinutes) : null;
+        const tagMode = message.tagMode || "none";
+        if (!["none", "add", "remove"].includes(tagMode)) throw new Error("タグ操作が無効です");
+        const tagIds = tagMode === "none" ? [] : await validTagIds(message.tagIds);
+        if (tagMode !== "none" && !tagIds.length) throw new Error("変更するタグを選択してください");
+        if (!hasInterval && tagMode === "none") throw new Error("変更内容を指定してください");
+        const monitors = await Promise.all(ids.map(getMonitor));
+        if (monitors.some(item => !item || item.trashedAt)) throw new Error("編集できない監視が含まれています。一覧を更新してください");
+        const now = Date.now();
+        const entries = {};
+        for (const monitor of monitors) {
+          if (hasInterval && monitor.intervalMinutes !== intervalMinutes) {
+            monitor.intervalMinutes = intervalMinutes;
+            monitor.nextCheckAt = now;
+          }
+          if (tagMode === "add") monitor.tagIds = [...new Set([...(monitor.tagIds || []), ...tagIds])];
+          if (tagMode === "remove") monitor.tagIds = (monitor.tagIds || []).filter(id => !tagIds.includes(id));
+          entries[monitorKey(monitor.id)] = monitor;
+        }
+        await chrome.storage.local.set(entries);
+        return { updated: monitors.length };
+      }
       case "startBatch": return await startBatch(message.scope);
       case "createTag": {
         const name = String(message.name || "").trim().slice(0, 80);
@@ -419,7 +457,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           ignoreSelectors: original.ignoreSelectors || [],
           intervalMinutes: original.intervalMinutes,
           enabled: original.enabled,
-          tagIds: original.tagIds || []
+          tagIds: original.tagIds || [],
+          notificationsEnabled: original.notificationsEnabled !== false
         });
         return copy;
       }
@@ -437,7 +476,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
             selector: source.selector, ignoreSelectors: [...(source.ignoreSelectors || [])],
             intervalMinutes: source.intervalMinutes, enabled: source.enabled,
             createdAt: Date.now(), nextCheckAt: Date.now(), lastCheckAt: null,
-            status: "new", error: null, text: null, history: [], tagIds: [...(source.tagIds || [])], trashedAt: null
+            status: "new", error: null, text: null, history: [], tagIds: [...(source.tagIds || [])], trashedAt: null,
+            notificationsEnabled: source.notificationsEnabled !== false
           };
           entries[monitorKey(monitor.id)] = monitor;
         }
@@ -484,6 +524,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         if (patch.ignoreSelectors !== undefined) monitor.ignoreSelectors = cleanIgnoreSelectors(patch.ignoreSelectors);
         if (patch.intervalMinutes !== undefined) monitor.intervalMinutes = cleanInterval(patch.intervalMinutes);
         if (patch.enabled !== undefined) monitor.enabled = Boolean(patch.enabled);
+        if (patch.notificationsEnabled !== undefined) monitor.notificationsEnabled = Boolean(patch.notificationsEnabled);
         if (patch.tagIds !== undefined) monitor.tagIds = await validTagIds(patch.tagIds);
         const selectionChanged = monitor.url !== oldUrl || monitor.selector !== oldSelector || JSON.stringify(monitor.ignoreSelectors || []) !== oldIgnore;
         if (selectionChanged) {

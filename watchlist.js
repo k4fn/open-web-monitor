@@ -33,3 +33,7 @@ export async function openMonitorLinks(monitors, { createTab, markRead, onOpened
   }
   return { opened, failed, readFailed };
 }
+
+export function selectableMonitorIds(visibleMonitors) {
+  return visibleMonitors.filter(monitor => !monitor.trashedAt).map(monitor => monitor.id);
+}

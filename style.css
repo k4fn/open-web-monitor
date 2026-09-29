@@ -190,3 +190,23 @@
 @media(max-width:600px){.tag-create{flex-wrap:wrap}.tag-create .secondary{width:100%}}
 .view-actions{flex-wrap:wrap}
 #open-all-links{white-space:nowrap}
+
+.header-target,.monitor-info-row{display:flex;align-items:center;gap:8px;min-width:0}
+.header-target input,.monitor-select{width:15px;height:15px;flex:0 0 15px;margin:0;accent-color:#087b70;cursor:pointer}
+.monitor-info-row .title-link{min-width:0}
+.monitor-card.selected{background:#edf8f3}
+#bulk-edit-open:disabled{opacity:.5}
+.notification-toggle{display:flex!important;flex-direction:row!important;align-items:center;gap:10px!important;font-size:13px!important;color:#254e4b!important}
+.notification-toggle input{width:auto!important;height:17px;width:17px!important;accent-color:#087b70}
+.notification-toggle+.section-hint{margin:12px 0 0}
+.bulk-edit-section{border-top:1px solid #e4eeeb;padding:16px 0}
+.bulk-edit-section>label{display:block;margin:0 0 10px;font-size:12px;font-weight:700;color:#385f5c}
+.bulk-edit-section .bulk-option{display:flex;align-items:center;gap:9px}
+.bulk-edit-section input[type="checkbox"]{accent-color:#087b70}
+.bulk-interval-controls{display:flex;align-items:center;gap:8px}
+.bulk-interval-controls input{width:110px}
+.bulk-interval-controls input,.bulk-interval-controls select,#bulk-tag-mode{padding:9px 11px;border:1px solid #c8dad5;border-radius:7px;background:#fff;color:#173b3c;font-size:13px}
+#bulk-tag-choices{margin-top:12px}
+#bulk-tag-choices .tag-choice{margin:0}
+#bulk-edit-error{min-height:16px;margin:0}
+@media(max-width:600px){.view-actions{align-items:stretch}.view-actions button{flex:1}.monitor-info-row{gap:5px}}

@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { makeExportData } from "./lib.js";
 
 test("more than 25 monitors can be created and listed", async () => {
   const values = new Map();
@@ -38,7 +39,7 @@ test("more than 25 monitors can be created and listed", async () => {
   const excluded = await request("update", { id: first.id, patch: { ignoreSelectors: ".ad\nfooter" } });
   assert.equal(excluded.value.text, null);
   assert.deepEqual(excluded.value.ignoreSelectors, [".ad", "footer"]);
-  await request("update", { id: first.id, patch: { enabled: false } });
+  await request("update", { id: first.id, patch: { enabled: false, notificationsEnabled: false } });
   const duplicated = await request("duplicate", { id: first.id });
   assert.equal(duplicated.ok, true);
   assert.notEqual(duplicated.value.id, first.id);
@@ -46,6 +47,7 @@ test("more than 25 monitors can be created and listed", async () => {
   assert.equal(duplicated.value.url, first.url);
   assert.deepEqual(duplicated.value.ignoreSelectors, [".ad", "footer"]);
   assert.equal(duplicated.value.enabled, false);
+  assert.equal(duplicated.value.notificationsEnabled, false);
   assert.equal(duplicated.value.text, null);
   assert.deepEqual(duplicated.value.history, []);
   assert.equal((await request("list")).value.length, 31);
@@ -66,6 +68,7 @@ test("more than 25 monitors can be created and listed", async () => {
     assert.deepEqual(copy.ignoreSelectors, first.ignoreSelectors);
     assert.equal(copy.intervalMinutes, first.intervalMinutes);
     assert.equal(copy.enabled, false);
+    assert.equal(copy.notificationsEnabled, false);
     assert.equal(copy.text, null);
     assert.deepEqual(copy.history, []);
     assert.equal(copy.status, "new");
@@ -79,15 +82,42 @@ test("more than 25 monitors can be created and listed", async () => {
   assert.deepEqual(tagged.value.tagIds, [tagA.id, tagB.id]);
   const taggedCopy = await request("duplicate", { id: first.id });
   assert.deepEqual(taggedCopy.value.tagIds, [tagA.id, tagB.id]);
+  assert.equal(taggedCopy.value.notificationsEnabled, false);
+  const bulkEdited = await request("bulkUpdate", {
+    ids: [first.id, duplicated.value.id], intervalMinutes: 1440, tagMode: "add", tagIds: [tagB.id]
+  });
+  assert.deepEqual(bulkEdited.value, { updated: 2 });
+  let editedFirst = (await request("list")).value.find(item => item.id === first.id);
+  let editedDuplicate = (await request("list")).value.find(item => item.id === duplicated.value.id);
+  assert.equal(editedFirst.intervalMinutes, 1440);
+  assert.equal(editedDuplicate.intervalMinutes, 1440);
+  assert.equal(editedFirst.enabled, false);
+  assert.deepEqual(editedFirst.tagIds, [tagA.id, tagB.id]);
+  assert.deepEqual(editedDuplicate.tagIds, [tagB.id]);
+  const invalidBulk = await request("bulkUpdate", {
+    ids: [first.id, duplicated.value.id], intervalMinutes: 0, tagMode: "add", tagIds: [tagB.id]
+  });
+  assert.equal(invalidBulk.ok, false);
+  assert.equal((await request("list")).value.find(item => item.id === first.id).intervalMinutes, 1440);
+  assert.equal((await request("bulkUpdate", { ids: [first.id], tagMode: "add", tagIds: ["missing"] })).ok, false);
+  await request("bulkUpdate", { ids: [first.id, duplicated.value.id], tagMode: "remove", tagIds: [tagB.id] });
+  editedFirst = (await request("list")).value.find(item => item.id === first.id);
+  editedDuplicate = (await request("list")).value.find(item => item.id === duplicated.value.id);
+  assert.deepEqual(editedFirst.tagIds, [tagA.id]);
+  assert.deepEqual(editedDuplicate.tagIds, []);
   await request("renameTag", { id: tagA.id, name: "Community" });
   assert.equal((await request("listTags")).value.find(tag => tag.id === tagA.id).name, "Community");
   await request("deleteTag", { id: tagA.id });
-  assert.deepEqual((await request("list")).value.find(item => item.id === first.id).tagIds, [tagB.id]);
+  assert.deepEqual((await request("list")).value.find(item => item.id === first.id).tagIds, []);
 
   const beforeTrash = (await request("list")).value.find(item => item.id === first.id);
   await request("delete", { id: first.id });
   const trashed = (await request("list")).value.find(item => item.id === first.id);
   assert.ok(trashed.trashedAt);
+  assert.equal((await request("bulkUpdate", { ids: [first.id], intervalMinutes: 60 })).ok, false);
+  const mixedBulk = await request("bulkUpdate", { ids: [duplicated.value.id, first.id], intervalMinutes: 60 });
+  assert.equal(mixedBulk.ok, false);
+  assert.equal((await request("list")).value.find(item => item.id === duplicated.value.id).intervalMinutes, 1440);
   assert.equal(trashed.enabled, beforeTrash.enabled);
   assert.deepEqual(trashed.tagIds, beforeTrash.tagIds);
   await request("restore", { id: first.id });
@@ -101,15 +131,23 @@ test("more than 25 monitors can be created and listed", async () => {
 
   const legacy = await request("import", { items: [{ url: "https://legacy.example/a", selector: ".body" }] });
   assert.equal(legacy.value, 1);
+  assert.equal((await request("list")).value.find(item => item.url === "https://legacy.example/a").notificationsEnabled, true);
   const modern = await request("import", { items: {
     version: 2, tags: [{ id: "old-id", name: "Imported" }],
-    monitors: [{ url: "https://modern.example/b", tagIds: ["old-id"], trashedAt: 1, enabled: false }]
+    monitors: [{ url: "https://modern.example/b", tagIds: ["old-id"], trashedAt: 1, enabled: false, notificationsEnabled: false }]
   } });
   assert.equal(modern.value, 1);
   const imported = (await request("list")).value.find(item => item.url === "https://modern.example/b");
   assert.ok(imported.trashedAt);
   assert.equal(imported.enabled, false);
+  assert.equal(imported.notificationsEnabled, false);
   assert.equal((await request("listTags")).value.find(tag => tag.id === imported.tagIds[0]).name, "Imported");
+  const exported = makeExportData([imported], (await request("listTags")).value);
+  const roundTrip = await request("import", { items: exported });
+  assert.equal(roundTrip.value, 1);
+  const matching = (await request("list")).value.filter(item => item.url === imported.url);
+  assert.equal(matching.length, 2);
+  assert.ok(matching.every(item => item.notificationsEnabled === false && item.trashedAt && !item.enabled));
   const invalidImport = await request("import", { items: { version: 2, tags: [], monitors: [{ url: "https://valid.example" }, { url: "file:///bad" }] } });
   assert.equal(invalidImport.ok, false);
   assert.equal((await request("list")).value.some(item => item.url === "https://valid.example/"), false);
@@ -122,5 +160,5 @@ test("more than 25 monitors can be created and listed", async () => {
   }
   const existing = (await request("list")).value.filter(item => item.id.startsWith("legacy-"));
   assert.equal(existing.length, 24);
-  assert.ok(existing.every(item => !item.trashedAt && !item.tagIds?.length && item.text === "saved"));
+  assert.ok(existing.every(item => !item.trashedAt && !item.tagIds?.length && item.text === "saved" && item.notificationsEnabled !== false));
 });
