@@ -374,3 +374,73 @@ footer{color:#aaa9a4}
 .row-button:hover{border-color:#bdbdb8;background:#f2f2f0}
 .popup .text-button{color:#62625d}
 .popup .text-button:hover{background:#f2f2f0;color:var(--ink)}
+
+/* Keep selection controls on one fixed track in both the header and every row. */
+.header-target,.monitor-info-row{display:grid;grid-template-columns:16px minmax(0,1fr);gap:10px;align-items:center}
+.header-target input,.monitor-select{box-sizing:border-box;width:16px;height:16px;min-width:16px;flex:none;margin:0}
+
+/* Compact Notion-like monitor editor */
+.edit-dialog{width:min(900px,calc(100vw - 32px));max-height:calc(100vh - 32px);border-radius:12px}
+.edit-dialog .detail{background:#fff}
+.edit-dialog .edit-form{display:flex;flex-direction:column}
+.edit-dialog .edit-head{position:sticky;top:0;z-index:3;align-items:center;padding:20px 28px;background:#fff;border-bottom:1px solid var(--line)}
+.edit-dialog .edit-head h3{font-size:19px;letter-spacing:-.035em;color:var(--ink)}
+.edit-dialog .edit-head p{font-size:12px;color:var(--muted)}
+.edit-dialog .edit-head-actions{flex-wrap:nowrap}
+.edit-dialog .edit-head-actions .secondary{font-size:12px}
+.edit-dialog .edit-section{padding:22px 28px;background:#fff;border-bottom:1px solid var(--line)}
+.edit-dialog .edit-section h4{font-size:14px;letter-spacing:-.02em;margin:0 0 7px;color:var(--ink)}
+.edit-dialog .section-hint{margin:0 0 16px;font-size:12px;line-height:1.55;color:var(--muted)}
+.edit-dialog .edit-basics-grid{grid-template-columns:minmax(190px,.8fr) minmax(320px,1.5fr);gap:14px}
+.edit-dialog .edit-form label{font-size:12px;color:#595955;gap:8px}
+.edit-dialog .edit-form .field-label{font-size:11px;color:var(--muted);font-weight:600}
+.edit-dialog .edit-form input:not([type="checkbox"]),.edit-dialog .edit-form select,.edit-dialog .edit-form textarea{
+  min-height:42px;padding:10px 12px;border:1px solid var(--line-strong);border-radius:6px;background:#fff;color:var(--ink);font-size:13px
+}
+.edit-dialog .edit-form input:focus,.edit-dialog .edit-form select:focus,.edit-dialog .edit-form textarea:focus{
+  border-color:#8c8c86;box-shadow:0 0 0 2px #25252512
+}
+.edit-dialog .edit-form .url-edit input,.edit-dialog .selector-edit input,.edit-dialog .ignore-edit textarea{font-family:ui-monospace,SFMono-Regular,monospace;font-size:12px}
+.edit-dialog .edit-rules-grid{grid-template-columns:1fr 1fr;gap:0;background:#fff;border-bottom:1px solid var(--line)}
+.edit-dialog .edit-rules-grid .edit-section{border:0}
+.edit-dialog .edit-rules-grid .edit-section+.edit-section{border-left:1px solid var(--line)}
+.edit-dialog .edit-form textarea{min-height:132px;line-height:1.6;resize:vertical}
+.edit-dialog .tag-choices{gap:7px}
+.edit-dialog .tag-choice{min-height:36px;padding:7px 11px;border-color:var(--line-strong);border-radius:6px;background:#fff;color:#555550}
+.edit-dialog .tag-choice:has(input:checked){border-color:#b7b7b1;background:#f6f6f4;color:var(--ink)}
+.edit-dialog .tag-choice input{accent-color:#555550}
+.edit-dialog .tag-create{max-width:520px;margin-top:12px}
+.edit-dialog .tag-create .secondary{min-height:42px}
+.edit-dialog .interval-editor{max-width:360px}
+.edit-dialog .interval-editor label:first-child{flex:1}
+.edit-dialog .interval-editor label:last-child{width:112px}
+.edit-dialog .interval-presets{gap:6px;margin-top:14px}
+.edit-dialog .interval-presets>span{width:100%;margin:0 0 2px;color:var(--muted)}
+.edit-dialog .preset-button{padding:7px 10px;border-color:var(--line-strong);border-radius:6px;background:#fff;color:#555550}
+.edit-dialog .preset-button.selected,.edit-dialog .preset-button:hover{border-color:#a5a59f;background:#f2f2ef;color:var(--ink)}
+.edit-dialog .notification-toggle{width:fit-content;padding:10px 12px;border:1px solid var(--line);border-radius:6px;background:#fafaf9}
+.edit-dialog .notification-toggle input{accent-color:#555550}
+.edit-dialog .notification-toggle+.section-hint{margin:10px 0 0}
+.edit-dialog .edit-footer{position:sticky;bottom:0;z-index:3;gap:8px;padding:14px 28px;background:#fff;border-top:1px solid var(--line)}
+.edit-dialog .edit-footer .primary{min-height:40px;padding:9px 18px;background:var(--ink)}
+.edit-dialog .edit-footer .secondary,.edit-dialog .edit-footer .small-button{min-height:40px}
+.edit-dialog .edit-footer .danger{margin-left:auto;color:#9e4a43}
+.edit-dialog .history-title{margin:22px 28px 10px;font-size:14px}
+.edit-dialog .empty-history,.edit-dialog .history-item,.edit-dialog .error-note{margin-left:28px;margin-right:28px}
+.edit-dialog .history-item{border-color:var(--line);border-radius:7px}
+@media(max-width:760px){
+  .edit-dialog .edit-head{align-items:flex-start;flex-direction:column;padding:17px 18px}
+  .edit-dialog .edit-head-actions{width:100%;flex-wrap:wrap}
+  .edit-dialog .edit-section{padding:18px}
+  .edit-dialog .edit-basics-grid,.edit-dialog .edit-rules-grid{grid-template-columns:1fr}
+  .edit-dialog .edit-rules-grid .edit-section+.edit-section{border-left:0;border-top:1px solid var(--line)}
+  .edit-dialog .edit-footer{padding:12px 18px}
+  .edit-dialog .edit-footer .danger{margin-left:0}
+  .edit-dialog .history-title{margin-left:18px}
+  .edit-dialog .empty-history,.edit-dialog .history-item,.edit-dialog .error-note{margin-left:18px;margin-right:18px}
+}
+@media(max-width:600px){
+  .edit-dialog{width:calc(100vw - 16px);max-height:calc(100vh - 16px)}
+  .edit-dialog .edit-head-actions .secondary{flex:1}
+  .edit-dialog .edit-footer{flex-wrap:wrap}
+}
