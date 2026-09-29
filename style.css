@@ -366,8 +366,8 @@ footer{color:#aaa9a4}
 
 /* Alignment and neutral states */
 .mark{background-color:transparent;mix-blend-mode:multiply}
-.monitor-card{border-left:2px solid transparent}
-.monitor-card.has-unread{border-left-color:var(--accent)}
+.monitor-card{border-left:0}
+.monitor-card.has-unread{border-left:0;box-shadow:inset 2px 0 var(--accent)}
 .change-count,.list-header>span:nth-child(3){text-align:center}
 .change-count.no-change{color:#9a9a94;font-weight:500}
 .row-button{border:1px solid var(--line-strong);background:#fff}
@@ -382,7 +382,7 @@ footer{color:#aaa9a4}
 /* Compact Notion-like monitor editor */
 .edit-dialog{width:min(900px,calc(100vw - 32px));max-height:calc(100vh - 32px);border-radius:12px}
 .edit-dialog .detail{background:#fff}
-.edit-dialog .edit-form{display:flex;flex-direction:column}
+.edit-dialog .edit-form{display:block;width:100%;margin:0}
 .edit-dialog .edit-head{position:sticky;top:0;z-index:3;align-items:center;padding:20px 28px;background:#fff;border-bottom:1px solid var(--line)}
 .edit-dialog .edit-head h3{font-size:19px;letter-spacing:-.035em;color:var(--ink)}
 .edit-dialog .edit-head p{font-size:12px;color:var(--muted)}
@@ -444,3 +444,6 @@ footer{color:#aaa9a4}
   .edit-dialog .edit-head-actions .secondary{flex:1}
   .edit-dialog .edit-footer{flex-wrap:wrap}
 }
+
+/* The list frame supplies the same left border as the header. */
+@media(max-width:650px){.list-header,.monitor-main{padding-left:8px;padding-right:8px}}
