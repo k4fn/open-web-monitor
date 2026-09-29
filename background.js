@@ -129,10 +129,29 @@ async function loadInTab(url, selector, ignoreSelectors) {
     if (tabId === undefined) throw new Error("監視用タブを開けませんでした");
     await waitForTab(tabId);
     await chrome.scripting.executeScript({ target: { tabId }, files: ["extract.js"] });
-    const result = await chrome.scripting.executeScript({ target: { tabId }, func: (include, ignore) => globalThis.__openWebMonitorExtract(include, ignore), args: [selector, ignoreSelectors || []] });
+    const result = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: async (include, ignore) => {
+        const deadline = Date.now() + 3000;
+        while (true) {
+          try {
+            return { ok: true, page: globalThis.__openWebMonitorExtract(include, ignore) };
+          } catch (error) {
+            const message = error?.message || String(error);
+            if (!message.startsWith("監視対象が見つかりません:") || Date.now() >= deadline) {
+              return { ok: false, message };
+            }
+            await new Promise(resolve => setTimeout(resolve, 250));
+          }
+        }
+      },
+      args: [selector, ignoreSelectors || []]
+    });
     if (result[0]?.error) throw new Error(result[0].error.message);
-    if (!result[0]?.result) throw new Error("ページの内容を取得できませんでした");
-    return result[0].result;
+    const extraction = result[0]?.result;
+    if (!extraction) throw new Error("ページの内容を取得できませんでした");
+    if (!extraction.ok) throw new Error(extraction.message || "ページの内容を取得できませんでした");
+    return extraction.page;
   } finally {
     if (windowId !== undefined) {
       try { await chrome.windows.remove(windowId); } catch { /* already closed */ }

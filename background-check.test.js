@@ -7,6 +7,8 @@ test("empty content is a change and notification failures do not mark checks as 
   let pageText = "first value";
   let pageTitle = "Example page";
   let beforeExtract = () => {};
+  let injectedExtract;
+  let extractionFailure = null;
   let openedTab;
   let openedWindow;
   let removedWindow;
@@ -35,7 +37,9 @@ test("empty content is a change and notification failures do not mark checks as 
       if (injection.files) return [];
       if (injection.args?.length === 1 && typeof injection.args[0] === "object") { pickerConfig = injection.args[0]; return []; }
       beforeExtract();
-      return [{ result: { text: pageText, title: pageTitle } }];
+      injectedExtract = injection.func;
+      if (extractionFailure) return [{ result: { ok: false, message: extractionFailure } }];
+      return [{ result: { ok: true, page: { text: pageText, title: pageTitle } } }];
     } },
     storage: { local: {
       async get(key) { return key === null ? Object.fromEntries(values) : { [key]: values.get(key) }; },
@@ -51,6 +55,34 @@ test("empty content is a change and notification failures do not mark checks as 
   assert.equal(removedTab, 1);
   assert.equal(first.value.text, "first value");
   assert.equal(first.value.history.length, 0);
+
+  // Exceptions stay inside the injected function instead of filling Chrome's extension error log.
+  const originalExtract = globalThis.__openWebMonitorExtract;
+  const originalNow = Date.now;
+  try {
+    globalThis.__openWebMonitorExtract = () => { throw new Error("Invalid selector"); };
+    assert.deepEqual(await injectedExtract(".bad", []), { ok: false, message: "Invalid selector" });
+    let attempts = 0;
+    Date.now = () => ++attempts === 1 ? 0 : 3001;
+    globalThis.__openWebMonitorExtract = () => {
+      throw new Error("監視対象が見つかりません: .missing");
+    };
+    assert.deepEqual(await injectedExtract(".missing", []), {
+      ok: false, message: "監視対象が見つかりません: .missing"
+    });
+    assert.equal(attempts, 2);
+  } finally {
+    globalThis.__openWebMonitorExtract = originalExtract;
+    Date.now = originalNow;
+  }
+
+  extractionFailure = "監視対象が見つかりません: .missing";
+  const missing = await request("check", { id });
+  assert.equal(missing.value.status, "error");
+  assert.equal(missing.value.error, extractionFailure);
+  assert.equal(missing.value.text, "first value");
+  assert.equal(missing.value.history.length, 0);
+  extractionFailure = null;
 
   pageText = "";
   const second = await request("check", { id });

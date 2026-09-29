@@ -21,7 +21,7 @@ test("batch and scheduled checks share work and respect concurrency", async () =
     scripting: { async executeScript(args) {
       if (args.files) return [];
       if (tabUrls.get(args.target.tabId) === failingUrl) throw new Error("fetch failed");
-      return [{ result: { text: "sample", title: "Page" } }];
+      return [{ result: { ok: true, page: { text: "sample", title: "Page" } } }];
     } },
     storage: { local: {
       async get(key) { return key === null ? Object.fromEntries(values) : { [key]: values.get(key) }; },
