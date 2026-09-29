@@ -449,7 +449,7 @@ footer{color:#aaa9a4}
 @media(max-width:650px){.list-header,.monitor-main{padding-left:8px;padding-right:8px}}
 
 /* Contextual bulk actions */
-.selection-bar{position:sticky;top:10px;z-index:8;display:flex;align-items:center;gap:14px;min-height:52px;margin:0 0 18px;padding:8px 10px 8px 14px;border:1px solid #d5d5d1;border-radius:8px;background:#fff;box-shadow:0 6px 22px #00000012}
+.selection-bar{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:30;display:flex;align-items:center;gap:14px;min-height:52px;width:max-content;max-width:calc(100vw - 36px);margin:0;padding:8px 10px 8px 14px;border:1px solid #d5d5d1;border-radius:9px;background:#fff;box-shadow:0 10px 36px #00000024}
 .selection-bar[hidden],.selection-actions[hidden]{display:none}
 .selection-bar>strong{font-size:12px;white-space:nowrap;color:#44443f}
 .selection-actions{display:flex;align-items:center;gap:6px}
@@ -462,3 +462,9 @@ footer{color:#aaa9a4}
 .bulk-edit-dialog .bulk-edit-section:first-of-type{border-top:0}
 .bulk-edit-dialog .bulk-hint{margin:9px 0 0}
 @media(max-width:720px){.selection-bar{align-items:flex-start;flex-wrap:wrap}.selection-actions{flex-wrap:wrap}.selection-bar>.text-button{margin-left:0}.selection-bar>strong{width:100%}}
+
+/* Keep transient progress and bulk controls out of the document flow. */
+.content-shell main{padding-bottom:76px}
+#batch-progress{position:fixed;right:18px;top:18px;z-index:29;margin:0;padding:9px 12px;border:1px solid var(--line-strong);border-radius:7px;background:#fff;box-shadow:0 8px 28px #0000001a;color:#555550;font-size:11px}
+#batch-progress[hidden]{display:none}
+.content-shell .topbar{min-height:88px;padding-bottom:16px}

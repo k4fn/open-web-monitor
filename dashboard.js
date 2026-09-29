@@ -207,8 +207,6 @@ function renderNavigation() {
   const title = view === "tag" ? tags.find(t => t.id === selectedTag)?.name || "タグ" :
     ({ all: "すべて", unread: "未読", error: "エラー", trash: "ごみ箱" })[view] || "すべて";
   document.querySelector("#view-title").textContent = title;
-  document.querySelector("#view-description").textContent =
-    ({ all:"登録中の監視を一覧で確認できます", unread:"変更を確認していない監視", error:"直近の確認でエラーが発生した監視", trash:"復元するまで確認されません" })[view] || "タグを付けた監視";
   const batch = document.querySelector("#batch-check"); batch.hidden = !["all", "error"].includes(view);
   batch.textContent = view === "error" ? "エラーのみ確認" : "全て確認";
   document.querySelector("#add-panel").hidden = view === "trash";
@@ -542,10 +540,11 @@ window.addEventListener("popstate", () => {
 async function refreshBatchProgress() {
   const job = await send("getBatchJob");
   const node = document.querySelector("#batch-progress");
-  if (!job) { node.textContent = ""; return; }
+  if (!job || job.status !== "running") { node.textContent = ""; node.hidden = true; document.querySelector("#batch-check").disabled = false; return; }
   const label = job.scope === "error" ? "エラーのみ確認" : job.scope === "selected" ? "選択した監視を確認" : "全て確認";
-  node.textContent = label+": "+job.done+"/"+job.ids.length+" 件完了 · 失敗 "+job.failed+" 件"+(job.status === "running" ? "（実行中）" : "");
-  document.querySelector("#batch-check").disabled = job.status === "running";
+  node.hidden = false;
+  node.textContent = label+" "+job.done+"/"+job.ids.length;
+  document.querySelector("#batch-check").disabled = true;
 }
 document.querySelector("#open-all-links").addEventListener("click", async event => {
   const button = event.currentTarget;
