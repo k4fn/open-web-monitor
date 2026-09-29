@@ -7,7 +7,7 @@ const CHECK_MODES = new Set(["pinned-tab", "window"]);
 const running = new Map();
 const TAGS_KEY = "tags";
 const BATCH_KEY = "batchCheckJob";
-const PROTOCOL_VERSION = 3;
+const PROTOCOL_VERSION = 4;
 let scanInProgress = false;
 let batchInProgress = false;
 let activeChecks = 0;
@@ -308,11 +308,16 @@ async function resumeBatch() {
   } finally { batchInProgress = false; }
 }
 
-async function startBatch(scope) {
-  if (!["all", "error"].includes(scope)) throw new Error("一括確認の対象が無効です");
+async function startBatch(scope, requestedIds) {
+  if (!["all", "error", "selected"].includes(scope)) throw new Error("一括確認の対象が無効です");
   const current = await getBatchJob();
   if (current?.status === "running") return current;
-  const items = (await allMonitors()).filter(item => item.enabled && !item.trashedAt && (scope === "all" || item.status === "error"));
+  let selected = null;
+  if (scope === "selected") {
+    if (!Array.isArray(requestedIds) || !requestedIds.length || requestedIds.some(id => typeof id !== "string") || new Set(requestedIds).size !== requestedIds.length) throw new Error("確認対象を選択してください");
+    selected = new Set(requestedIds);
+  }
+  const items = (await allMonitors()).filter(item => item.enabled && !item.trashedAt && (scope === "all" || scope === "error" && item.status === "error" || scope === "selected" && selected.has(item.id)));
   const job = { id: crypto.randomUUID(), scope, ids: items.map(item => item.id), completed: {}, done: 0, failed: 0, status: items.length ? "running" : "done", startedAt: Date.now() };
   await chrome.storage.local.set({ [BATCH_KEY]: job });
   if (items.length) resumeBatch().catch(error => console.error("一括確認に失敗しました", error));
@@ -405,7 +410,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         if (!["none", "add", "remove"].includes(tagMode)) throw new Error("タグ操作が無効です");
         const tagIds = tagMode === "none" ? [] : await validTagIds(message.tagIds);
         if (tagMode !== "none" && !tagIds.length) throw new Error("変更するタグを選択してください");
-        if (!hasInterval && tagMode === "none") throw new Error("変更内容を指定してください");
+        const hasNotifications = message.notificationsEnabled !== undefined;
+        const hasEnabled = message.enabled !== undefined;
+        if (!hasInterval && tagMode === "none" && !hasNotifications && !hasEnabled) throw new Error("変更内容を指定してください");
         const monitors = await Promise.all(ids.map(getMonitor));
         if (monitors.some(item => !item || item.trashedAt)) throw new Error("編集できない監視が含まれています。一覧を更新してください");
         const now = Date.now();
@@ -417,12 +424,51 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           }
           if (tagMode === "add") monitor.tagIds = [...new Set([...(monitor.tagIds || []), ...tagIds])];
           if (tagMode === "remove") monitor.tagIds = (monitor.tagIds || []).filter(id => !tagIds.includes(id));
+          if (hasNotifications) monitor.notificationsEnabled = Boolean(message.notificationsEnabled);
+          if (hasEnabled && monitor.enabled !== Boolean(message.enabled)) {
+            monitor.enabled = Boolean(message.enabled);
+            if (monitor.enabled) monitor.nextCheckAt = now;
+          }
           entries[monitorKey(monitor.id)] = monitor;
         }
         await chrome.storage.local.set(entries);
         return { updated: monitors.length };
       }
-      case "startBatch": return await startBatch(message.scope);
+      case "bulkTrash": {
+        const ids = message.ids;
+        if (!Array.isArray(ids) || !ids.length || ids.some(id => typeof id !== "string") || new Set(ids).size !== ids.length) throw new Error("削除対象を選択してください");
+        const monitors = await Promise.all(ids.map(getMonitor));
+        if (monitors.some(item => !item || item.trashedAt)) throw new Error("削除できない監視が含まれています。一覧を更新してください");
+        const trashedAt = Date.now();
+        const entries = Object.fromEntries(monitors.map(monitor => [monitorKey(monitor.id), { ...monitor, trashedAt }]));
+        await chrome.storage.local.set(entries);
+        await updateBadge();
+        return { updated: monitors.length };
+      }
+      case "bulkRestore": {
+        const ids = message.ids;
+        if (!Array.isArray(ids) || !ids.length || ids.some(id => typeof id !== "string") || new Set(ids).size !== ids.length) throw new Error("復元対象を選択してください");
+        const monitors = await Promise.all(ids.map(getMonitor));
+        if (monitors.some(item => !item || !item.trashedAt)) throw new Error("復元できない監視が含まれています。一覧を更新してください");
+        const now = Date.now();
+        const entries = Object.fromEntries(monitors.map(monitor => {
+          monitor.trashedAt = null;
+          if (monitor.enabled) monitor.nextCheckAt = now;
+          return [monitorKey(monitor.id), monitor];
+        }));
+        await chrome.storage.local.set(entries);
+        return { updated: monitors.length };
+      }
+      case "bulkDeletePermanently": {
+        const ids = message.ids;
+        if (!Array.isArray(ids) || !ids.length || ids.some(id => typeof id !== "string") || new Set(ids).size !== ids.length) throw new Error("削除対象を選択してください");
+        const monitors = await Promise.all(ids.map(getMonitor));
+        if (monitors.some(item => !item || !item.trashedAt)) throw new Error("完全削除できない監視が含まれています。一覧を更新してください");
+        for (const id of ids) await chrome.storage.local.remove(monitorKey(id));
+        await updateBadge();
+        return { deleted: ids.length };
+      }
+      case "startBatch": return await startBatch(message.scope, message.ids);
       case "createTag": {
         const name = String(message.name || "").trim().slice(0, 80);
         if (!name) throw new Error("タグ名を入力してください");

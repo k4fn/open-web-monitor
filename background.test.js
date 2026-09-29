@@ -94,6 +94,17 @@ test("more than 25 monitors can be created and listed", async () => {
   assert.equal(editedFirst.enabled, false);
   assert.deepEqual(editedFirst.tagIds, [tagA.id, tagB.id]);
   assert.deepEqual(editedDuplicate.tagIds, [tagB.id]);
+  const notificationEdited = await request("bulkUpdate", {
+    ids: [first.id, duplicated.value.id], tagMode: "none", notificationsEnabled: true, enabled: true
+  });
+  assert.deepEqual(notificationEdited.value, { updated: 2 });
+  editedFirst = (await request("list")).value.find(item => item.id === first.id);
+  editedDuplicate = (await request("list")).value.find(item => item.id === duplicated.value.id);
+  assert.equal(editedFirst.notificationsEnabled, true);
+  assert.equal(editedDuplicate.notificationsEnabled, true);
+  assert.equal(editedFirst.enabled, true);
+  assert.equal(editedDuplicate.enabled, true);
+  await request("bulkUpdate", { ids: [first.id, duplicated.value.id], tagMode: "none", enabled: false });
   const invalidBulk = await request("bulkUpdate", {
     ids: [first.id, duplicated.value.id], intervalMinutes: 0, tagMode: "add", tagIds: [tagB.id]
   });
@@ -128,6 +139,14 @@ test("more than 25 monitors can be created and listed", async () => {
   await request("delete", { id: doomed.id });
   await request("deletePermanently", { id: doomed.id });
   assert.equal((await request("list")).value.some(item => item.id === doomed.id), false);
+  const trashA = (await request("create", { monitor: { url: "https://example.net/trash-a" } })).value;
+  const trashB = (await request("create", { monitor: { url: "https://example.net/trash-b" } })).value;
+  assert.deepEqual((await request("bulkTrash", { ids: [trashA.id, trashB.id] })).value, { updated: 2 });
+  assert.ok((await request("list")).value.find(item => item.id === trashA.id).trashedAt);
+  assert.deepEqual((await request("bulkRestore", { ids: [trashA.id] })).value, { updated: 1 });
+  assert.equal((await request("list")).value.find(item => item.id === trashA.id).trashedAt, null);
+  assert.deepEqual((await request("bulkDeletePermanently", { ids: [trashB.id] })).value, { deleted: 1 });
+  assert.equal((await request("list")).value.some(item => item.id === trashB.id), false);
 
   const legacy = await request("import", { items: [{ url: "https://legacy.example/a", selector: ".body" }] });
   assert.equal(legacy.value, 1);

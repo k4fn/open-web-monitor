@@ -21,7 +21,7 @@ async function send(type, payload = {}) {
 async function load() {
   try {
     const capabilities = await send("getCapabilities");
-    if (capabilities?.protocol !== 3) { stale(); return; }
+    if (capabilities?.protocol !== 4) { stale(); return; }
     checkMode.value = await send("getCheckMode");
     concurrency.value = await send("getScanConcurrency");
   } catch (error) { if (!banner.hidden) return; status.textContent = error.message; }

@@ -223,7 +223,9 @@ function syncSelectionUI() {
   selectAll.checked = eligibleIds.length > 0 && eligibleIds.every(id => selectedIds.has(id));
   selectAll.indeterminate = selectedIds.size > 0 && !selectAll.checked;
   document.querySelector("#selected-count").textContent = selectedIds.size;
-  document.querySelector("#bulk-edit-open").disabled = selectedIds.size === 0;
+  document.querySelector("#selection-bar").hidden = selectedIds.size === 0;
+  document.querySelector("#selection-active-actions").hidden = view === "trash";
+  document.querySelector("#selection-trash-actions").hidden = view !== "trash";
   if (bulkEditDialog.open) {
     document.querySelector("#bulk-edit-count").textContent = selectedIds.size + " 件の監視を編集します";
     if (!selectedIds.size) document.querySelector("#bulk-edit-submit").disabled = true;
@@ -250,13 +252,11 @@ function render() {
     const card = el("article", "monitor-card"+(unread ? " has-unread" : "")+(faded ? " recently-read" : ""));
     const main = el("div", "monitor-main"), left = el("div", "monitor-info");
     const infoRow = el("div", "monitor-info-row");
-    if (!monitor.trashedAt) {
-      const checkbox = el("input", "monitor-select");
-      checkbox.type = "checkbox"; checkbox.dataset.id = monitor.id;
-      checkbox.checked = selectedIds.has(monitor.id);
-      checkbox.setAttribute("aria-label", (monitor.title || monitor.url) + " を選択");
-      infoRow.append(checkbox);
-    }
+    const checkbox = el("input", "monitor-select");
+    checkbox.type = "checkbox"; checkbox.dataset.id = monitor.id;
+    checkbox.checked = selectedIds.has(monitor.id);
+    checkbox.setAttribute("aria-label", (monitor.title || monitor.url) + " を選択");
+    infoRow.append(checkbox);
     const link = el("a", "title-link", monitor.title || new URL(monitor.url).hostname);
     link.href = monitor.url; link.target = "_blank"; link.rel = "noopener noreferrer"; link.dataset.monitorId = monitor.id;
     infoRow.append(link); left.append(infoRow);
@@ -459,13 +459,14 @@ document.querySelector("#bulk-form").addEventListener("submit", async event => {
 function updateBulkEditControls() {
   const intervalEnabled = document.querySelector("#bulk-set-interval").checked;
   const tagMode = document.querySelector("#bulk-tag-mode").value;
+  const notificationMode = document.querySelector("#bulk-notification-mode").value;
   document.querySelector("#bulk-interval-value").disabled = !intervalEnabled;
   document.querySelector("#bulk-interval-unit").disabled = !intervalEnabled;
   const tagCheckboxes = [...document.querySelectorAll('#bulk-tag-choices input[type="checkbox"]')];
   for (const checkbox of tagCheckboxes) checkbox.disabled = tagMode === "none";
   const hasChosenTags = tagCheckboxes.some(checkbox => checkbox.checked);
   document.querySelector("#bulk-edit-submit").disabled =
-    !selectedIds.size || (!intervalEnabled && tagMode === "none") || (tagMode !== "none" && !hasChosenTags);
+    !selectedIds.size || (!intervalEnabled && tagMode === "none" && notificationMode === "none") || (tagMode !== "none" && !hasChosenTags);
 }
 
 document.querySelector("#bulk-edit-open").addEventListener("click", () => {
@@ -487,6 +488,7 @@ document.querySelector("#bulk-edit-close").addEventListener("click", () => bulkE
 document.querySelector("#bulk-edit-cancel").addEventListener("click", () => bulkEditDialog.close());
 document.querySelector("#bulk-set-interval").addEventListener("change", updateBulkEditControls);
 document.querySelector("#bulk-tag-mode").addEventListener("change", updateBulkEditControls);
+document.querySelector("#bulk-notification-mode").addEventListener("change", updateBulkEditControls);
 document.querySelector("#bulk-tag-choices").addEventListener("change", updateBulkEditControls);
 document.querySelector("#bulk-edit-form").addEventListener("submit", async event => {
   event.preventDefault();
@@ -494,6 +496,7 @@ document.querySelector("#bulk-edit-form").addEventListener("submit", async event
   const errorNote = document.querySelector("#bulk-edit-error");
   const ids = [...selectedIds];
   const tagMode = document.querySelector("#bulk-tag-mode").value;
+  const notificationMode = document.querySelector("#bulk-notification-mode").value;
   const payload = { ids, tagMode };
   try {
     if (document.querySelector("#bulk-set-interval").checked) {
@@ -506,6 +509,7 @@ document.querySelector("#bulk-edit-form").addEventListener("submit", async event
       payload.tagIds = [...document.querySelectorAll('#bulk-tag-choices input[type="checkbox"]:checked')].map(input => input.value);
       if (!payload.tagIds.length) throw new Error("変更するタグを選択してください");
     }
+    if (notificationMode !== "none") payload.notificationsEnabled = notificationMode === "on";
     submit.disabled = true;
     const result = await send("bulkUpdate", payload);
     bulkEditDialog.close();
@@ -539,7 +543,7 @@ async function refreshBatchProgress() {
   const job = await send("getBatchJob");
   const node = document.querySelector("#batch-progress");
   if (!job) { node.textContent = ""; return; }
-  const label = job.scope === "error" ? "エラーのみ確認" : "全て確認";
+  const label = job.scope === "error" ? "エラーのみ確認" : job.scope === "selected" ? "選択した監視を確認" : "全て確認";
   node.textContent = label+": "+job.done+"/"+job.ids.length+" 件完了 · 失敗 "+job.failed+" 件"+(job.status === "running" ? "（実行中）" : "");
   document.querySelector("#batch-check").disabled = job.status === "running";
 }
@@ -568,6 +572,62 @@ document.querySelector("#batch-check").addEventListener("click", async () => {
   try { await send("startBatch", { scope: view === "error" ? "error" : "all" }); await refreshBatchProgress(); }
   catch (error) { showToast(error.message, true); }
 });
+async function runSelectedAction(action) {
+  const ids = [...selectedIds];
+  if (!ids.length) return;
+  for (const node of document.querySelectorAll("#selection-bar button")) node.disabled = true;
+  try {
+    if (action === "check") {
+      const job = await send("startBatch", { scope: "selected", ids });
+      await refreshBatchProgress();
+      showToast(job.ids.length + " 件の確認を開始しました");
+    } else {
+      const enabled = action === "resume";
+      const result = await send("bulkUpdate", { ids, tagMode: "none", enabled });
+      selectedIds.clear();
+      await refresh();
+      showToast(result.updated + " 件を" + (enabled ? "再開" : "停止") + "しました");
+    }
+  } catch (error) { showToast(error.message, true); }
+  finally {
+    for (const node of document.querySelectorAll("#selection-bar button")) node.disabled = false;
+    syncSelectionUI();
+  }
+}
+document.querySelector("#bulk-check-selected").addEventListener("click", () => runSelectedAction("check"));
+document.querySelector("#bulk-stop-selected").addEventListener("click", () => runSelectedAction("stop"));
+document.querySelector("#bulk-resume-selected").addEventListener("click", () => runSelectedAction("resume"));
+document.querySelector("#bulk-trash-selected").addEventListener("click", async () => {
+  const ids = [...selectedIds];
+  if (!ids.length || !confirm(ids.length + " 件の監視をごみ箱へ移動しますか？")) return;
+  try {
+    const result = await send("bulkTrash", { ids });
+    selectedIds.clear();
+    await refresh();
+    showToast(result.updated + " 件をごみ箱へ移動しました");
+  } catch (error) { showToast(error.message, true); }
+});
+document.querySelector("#bulk-restore-selected").addEventListener("click", async () => {
+  const ids = [...selectedIds];
+  if (!ids.length) return;
+  try {
+    const result = await send("bulkRestore", { ids });
+    selectedIds.clear();
+    await refresh();
+    showToast(result.updated + " 件を復元しました");
+  } catch (error) { showToast(error.message, true); }
+});
+document.querySelector("#bulk-delete-selected").addEventListener("click", async () => {
+  const ids = [...selectedIds];
+  if (!ids.length || !confirm(ids.length + " 件の監視を完全に削除しますか？元に戻せません。")) return;
+  try {
+    const result = await send("bulkDeletePermanently", { ids });
+    selectedIds.clear();
+    await refresh();
+    showToast(result.deleted + " 件を完全に削除しました");
+  } catch (error) { showToast(error.message, true); }
+});
+document.querySelector("#bulk-clear-selection").addEventListener("click", () => { selectedIds.clear(); syncSelectionUI(); });
 search.addEventListener("input", () => { selectedIds.clear(); render(); });
 document.querySelector("#select-all").addEventListener("change", event => {
   selectedIds.clear();

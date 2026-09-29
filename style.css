@@ -447,3 +447,18 @@ footer{color:#aaa9a4}
 
 /* The list frame supplies the same left border as the header. */
 @media(max-width:650px){.list-header,.monitor-main{padding-left:8px;padding-right:8px}}
+
+/* Contextual bulk actions */
+.selection-bar{position:sticky;top:10px;z-index:8;display:flex;align-items:center;gap:14px;min-height:52px;margin:0 0 18px;padding:8px 10px 8px 14px;border:1px solid #d5d5d1;border-radius:8px;background:#fff;box-shadow:0 6px 22px #00000012}
+.selection-bar[hidden],.selection-actions[hidden]{display:none}
+.selection-bar>strong{font-size:12px;white-space:nowrap;color:#44443f}
+.selection-actions{display:flex;align-items:center;gap:6px}
+.selection-bar>.text-button{margin-left:auto;padding:8px 10px;color:#6c6c67}
+.selection-bar .primary,.selection-bar .secondary{padding:8px 12px;font-size:12px}
+.selection-bar .danger{color:#a1453e;border-color:#e2c5c1}
+.selection-bar .danger:hover{background:#fcf1ef;border-color:#d8aaa4}
+#bulk-notification-mode{width:100%;padding:9px 11px;border:1px solid #c8dad5;border-radius:7px;background:#fff;color:#173b3c;font-size:13px}
+.bulk-edit-dialog .bulk-edit-section{padding:18px 0}
+.bulk-edit-dialog .bulk-edit-section:first-of-type{border-top:0}
+.bulk-edit-dialog .bulk-hint{margin:9px 0 0}
+@media(max-width:720px){.selection-bar{align-items:flex-start;flex-wrap:wrap}.selection-actions{flex-wrap:wrap}.selection-bar>.text-button{margin-left:0}.selection-bar>strong{width:100%}}

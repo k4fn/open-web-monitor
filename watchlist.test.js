@@ -18,7 +18,7 @@ test("visible links follow the current screen and search", () => {
   assert.deepEqual(ids("tag", { selectedTag: "t" }), ["b", "a"]);
   assert.deepEqual(ids("all", { query: "Beta" }), ["b"]);
   assert.deepEqual(selectableMonitorIds(visibleMonitorsForView(items, { view: "all", query: "Beta" })), ["b"]);
-  assert.deepEqual(selectableMonitorIds(visibleMonitorsForView(items, { view: "trash" })), []);
+  assert.deepEqual(selectableMonitorIds(visibleMonitorsForView(items, { view: "trash" })), ["c"]);
 });
 
 test("open all continues after a failed tab and only marks opened unread links", async () => {

@@ -64,4 +64,17 @@ test("batch and scheduled checks share work and respect concurrency", async () =
   }
   assert.equal(job.done, 1);
   assert.equal(job.failed, 1);
+
+  failingUrl = null;
+  const allIds = (await request("list")).value.map(item => item.id);
+  const openedBeforeSelected = opened;
+  const selectedBatch = await request("startBatch", { scope: "selected", ids: [allIds[1]] });
+  assert.deepEqual(selectedBatch.value.ids, [allIds[1]]);
+  for (let i = 0; i < 30; i++) {
+    job = (await request("getBatchJob")).value;
+    if (job.status === "done") break;
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  assert.equal(job.done, 1);
+  assert.equal(opened - openedBeforeSelected, 1);
 });
