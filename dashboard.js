@@ -212,8 +212,6 @@ function renderNavigation() {
   const batch = document.querySelector("#batch-check"); batch.hidden = !["all", "error"].includes(view);
   batch.textContent = view === "error" ? "エラーのみ確認" : "全て確認";
   document.querySelector("#add-panel").hidden = view === "trash";
-  document.querySelector("#total").textContent = active.length;
-  document.querySelector("#unread").textContent = counts.unread;
 }
 
 function syncSelectionUI() {
@@ -266,7 +264,7 @@ function render() {
     left.append(el("div", "meta", new URL(monitor.url).hostname+(monitor.selector ? " · 部分" : " · 全体")+(tagNames.length ? " · "+tagNames.join(", ") : "")+(monitor.notificationsEnabled === false ? " · 通知OFF" : "")));
     const summary = monitor.status === "error" ? monitor.error : monitor.text === null ? "初回の確認待ち" : monitor.text || "（空のテキスト）";
     const excerpt = el("div", "excerpt", String(summary || "").slice(0,260)); excerpt.title = String(summary || "").slice(0,1000);
-    const changes = el("div", "change-count", unread ? unread+" 件" : "—");
+    const changes = el("div", "change-count "+(unread ? "has-changes" : "no-change"), unread ? unread+" 件" : "—");
     const checked = el("div", "checked", shortDateText(monitor.lastCheckAt));
     const interval = el("div", "interval", intervalLabel(monitor.intervalMinutes));
     const actions = el("div", "monitor-actions");

@@ -363,3 +363,14 @@ footer{color:#aaa9a4}
  .filters input{width:100%}
 }
 @media(prefers-reduced-motion:reduce){button,input,select,textarea{transition:none}}
+
+/* Alignment and neutral states */
+.mark{background-color:transparent;mix-blend-mode:multiply}
+.monitor-card{border-left:2px solid transparent}
+.monitor-card.has-unread{border-left-color:var(--accent)}
+.change-count,.list-header>span:nth-child(3){text-align:center}
+.change-count.no-change{color:#9a9a94;font-weight:500}
+.row-button{border:1px solid var(--line-strong);background:#fff}
+.row-button:hover{border-color:#bdbdb8;background:#f2f2f0}
+.popup .text-button{color:#62625d}
+.popup .text-button:hover{background:#f2f2f0;color:var(--ink)}
